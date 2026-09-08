@@ -11,6 +11,7 @@ import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.entity.OrderItem;
 import com.ecommerce.monolith.order.entity.ShippingAddress;
 import com.ecommerce.monolith.order.repository.OrderRepository;
+import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.product.dto.ProductRequest;
 import com.ecommerce.monolith.product.dto.ProductResponse;
 import com.ecommerce.monolith.product.service.ProductService;
@@ -39,6 +40,7 @@ public class OrderService {
     private final ProductService productService;
     private final CartService cartService;
     private final CouponService couponService;
+    private final OutboxEventService outboxEventService;
 
     public OrderResponse.OrderInfo createOrder(Long userId, OrderRequest.Create request) {
         // 1. 사용자 정보 확인
@@ -63,6 +65,7 @@ public class OrderService {
         // 5. 주문 저장
         Order savedOrder = orderRepository.save(order);
         markCouponUsedIfPresent(request.getUserCouponId(), savedOrder.getOrderId());
+        outboxEventService.recordOrderCreated(savedOrder);
 
         log.info("event=order.created orderId={} userId={} totalAmount={}",
                 savedOrder.getOrderId(), savedOrder.getUserId(), savedOrder.getTotalAmount());
@@ -94,6 +97,7 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         markCouponUsedIfPresent(request.getUserCouponId(), savedOrder.getOrderId());
         cartService.clearCart(userId);
+        outboxEventService.recordOrderCreated(savedOrder);
 
         log.info("event=order.created_from_cart orderId={} userId={} totalAmount={}",
                 savedOrder.getOrderId(), savedOrder.getUserId(), savedOrder.getTotalAmount());
@@ -197,6 +201,7 @@ public class OrderService {
         orderRepository.save(order);
 
         restoreOrderResources(order);
+        outboxEventService.recordOrderCancelled(order, "USER_CANCELLED");
 
         log.info("event=order.cancelled orderId={} userId={}", orderId, order.getUserId());
     }
@@ -220,6 +225,7 @@ public class OrderService {
         order.updateStatus(Order.OrderStatus.CANCELLED);
         orderRepository.save(order);
         restoreOrderResources(order);
+        outboxEventService.recordOrderCancelled(order, "PAYMENT_FAILED");
 
         log.info("event=order.payment_failure_recovered orderId={} userId={}", orderId, order.getUserId());
     }
@@ -255,6 +261,7 @@ public class OrderService {
         order.updateStatus(Order.OrderStatus.CANCELLED);
         orderRepository.save(order);
         restoreOrderResources(order);
+        outboxEventService.recordOrderCancelled(order, "PENDING_EXPIRED");
 
         log.info("event=order.expired orderId={} userId={}", order.getOrderId(), order.getUserId());
         return true;

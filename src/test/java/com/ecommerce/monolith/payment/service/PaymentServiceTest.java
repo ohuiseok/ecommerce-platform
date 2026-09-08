@@ -5,6 +5,7 @@ import com.ecommerce.monolith.common.exception.ErrorCode;
 import com.ecommerce.monolith.order.dto.OrderResponse;
 import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.service.OrderService;
+import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.payment.client.MockPgClient;
 import com.ecommerce.monolith.payment.dto.PaymentRequest;
 import com.ecommerce.monolith.payment.dto.PaymentResponse;
@@ -50,6 +51,9 @@ class PaymentServiceTest {
     @Mock
     private MockPgClient mockPgClient;
 
+    @Mock
+    private OutboxEventService outboxEventService;
+
     @InjectMocks
     private PaymentService paymentService;
 
@@ -83,6 +87,7 @@ class PaymentServiceTest {
         assertThat(result.getPgTransactionId()).isEqualTo("MOCK-TX-1");
         assertThat(result.getIdempotencyKey()).isEqualTo("pay-key-1");
         verify(orderService).markOrderConfirmed(1L);
+        verify(outboxEventService).recordPaymentCompleted(any(Payment.class));
     }
 
     @Test
@@ -111,6 +116,7 @@ class PaymentServiceTest {
         assertThat(result.getFailureReason()).isEqualTo("카드 승인이 거절되었습니다");
         verify(orderService, never()).markOrderConfirmed(any());
         verify(orderService).cancelPendingOrderAfterPaymentFailure(1L);
+        verify(outboxEventService).recordPaymentFailed(any(Payment.class));
     }
 
     @Test
@@ -203,6 +209,8 @@ class PaymentServiceTest {
         verify(mockPgClient, never()).charge(any(), any(), any());
         verify(paymentRepository, never()).save(any());
         verify(orderService, never()).markOrderConfirmed(any());
+        verify(outboxEventService, never()).recordPaymentCompleted(any());
+        verify(outboxEventService, never()).recordPaymentFailed(any());
     }
 
     @Test
@@ -298,6 +306,7 @@ class PaymentServiceTest {
         assertThat(task.getAmount()).isEqualByComparingTo("12000");
         assertThat(task.getReason()).contains("늦은 결제 승인");
         assertThat(task.getPgOccurredAt()).isEqualTo(occurredAt);
+        verify(outboxEventService).recordPaymentReconciliationRequired(any(PaymentReconciliationTask.class));
     }
 
     @Test
@@ -332,6 +341,7 @@ class PaymentServiceTest {
         assertThat(result.get().getTaskId()).isEqualTo(100L);
         assertThat(result.get().getPgDeliveryId()).isEqualTo("MOCK-DELIVERY-FIRST");
         verify(reconciliationTaskRepository, never()).save(any());
+        verify(outboxEventService, never()).recordPaymentReconciliationRequired(any());
     }
 
     @Test

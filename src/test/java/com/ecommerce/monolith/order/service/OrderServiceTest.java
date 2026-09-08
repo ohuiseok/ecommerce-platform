@@ -8,6 +8,7 @@ import com.ecommerce.monolith.order.dto.OrderResponse;
 import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.entity.OrderItem;
 import com.ecommerce.monolith.order.repository.OrderRepository;
+import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.product.dto.ProductRequest;
 import com.ecommerce.monolith.product.dto.ProductResponse;
 import com.ecommerce.monolith.product.entity.Product;
@@ -50,6 +51,9 @@ class OrderServiceTest {
     @Mock
     private CouponService couponService;
 
+    @Mock
+    private OutboxEventService outboxEventService;
+
     @InjectMocks
     private OrderService orderService;
 
@@ -83,6 +87,7 @@ class OrderServiceTest {
 
         assertThat(result.getUserId()).isEqualTo(1L);
         assertThat(orderCaptor.getValue().getUserId()).isEqualTo(1L);
+        verify(outboxEventService).recordOrderCreated(orderCaptor.getValue());
     }
 
     @Test
@@ -159,6 +164,7 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
         verify(productService).updateStock(eq(10L), stockUpdate(ProductRequest.Operation.INCREASE, 2));
         verify(couponService).restoreCoupon(20L);
+        verify(outboxEventService).recordOrderCancelled(order, "PAYMENT_FAILED");
     }
 
     @Test
@@ -178,6 +184,7 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(any(Order.class));
         verify(productService, never()).updateStock(any(), any());
         verify(couponService, never()).restoreCoupon(any());
+        verify(outboxEventService, never()).recordOrderCancelled(any(), any());
     }
 
     @Test
@@ -205,6 +212,7 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
         verify(productService).updateStock(eq(10L), stockUpdate(ProductRequest.Operation.INCREASE, 2));
         verify(couponService).restoreCoupon(20L);
+        verify(outboxEventService).recordOrderCancelled(order, "PENDING_EXPIRED");
     }
 
     @Test

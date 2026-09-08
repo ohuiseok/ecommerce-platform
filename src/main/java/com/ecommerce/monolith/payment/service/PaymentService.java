@@ -5,6 +5,7 @@ import com.ecommerce.monolith.common.exception.ErrorCode;
 import com.ecommerce.monolith.order.dto.OrderResponse;
 import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.service.OrderService;
+import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.payment.client.MockPgClient;
 import com.ecommerce.monolith.payment.dto.PaymentRequest;
 import com.ecommerce.monolith.payment.dto.PaymentResponse;
@@ -34,6 +35,7 @@ public class PaymentService {
     private final PaymentWebhookEventRepository webhookEventRepository;
     private final OrderService orderService;
     private final MockPgClient mockPgClient;
+    private final OutboxEventService outboxEventService;
 
     public PaymentResponse.PaymentInfo requestPayment(PaymentRequest.Create request) {
         OrderResponse.OrderInfo order = orderService.getOrder(request.getOrderId());
@@ -84,10 +86,12 @@ public class PaymentService {
 
         if (savedPayment.getStatus() == Payment.PaymentStatus.COMPLETED) {
             orderService.markOrderConfirmed(order.getOrderId());
+            outboxEventService.recordPaymentCompleted(savedPayment);
             log.info("event=payment.completed orderId={} paymentId={} userId={} amount={}",
                     order.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getAmount());
         } else {
             orderService.cancelPendingOrderAfterPaymentFailure(order.getOrderId());
+            outboxEventService.recordPaymentFailed(savedPayment);
             log.warn("event=payment.failed orderId={} paymentId={} userId={} reason={}",
                     order.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getFailureReason());
         }
@@ -130,8 +134,15 @@ public class PaymentService {
             return Optional.empty();
         }
 
-        PaymentReconciliationTask task = reconciliationTaskRepository.findByPgEventId(event.eventId())
-                .orElseGet(() -> reconciliationTaskRepository.save(PaymentReconciliationTask.builder()
+        Optional<PaymentReconciliationTask> existingTask = reconciliationTaskRepository.findByPgEventId(event.eventId());
+        if (existingTask.isPresent()) {
+            PaymentReconciliationTask task = existingTask.get();
+            log.warn("event=payment.reconciliation_task_registered orderId={} userId={} pgEventId={} pgTransactionId={} amount={} taskId={}",
+                    task.getOrderId(), task.getUserId(), task.getPgEventId(), task.getPgTransactionId(), task.getAmount(), task.getTaskId());
+            return Optional.of(PaymentResponse.PaymentReconciliationTaskInfo.from(task));
+        }
+
+        PaymentReconciliationTask task = reconciliationTaskRepository.save(PaymentReconciliationTask.builder()
                         .type(PaymentReconciliationTask.ReconciliationType.LATE_PAYMENT_APPROVED_AFTER_ORDER_CANCELLED)
                         .orderId(order.getOrderId())
                         .userId(order.getUserId())
@@ -141,7 +152,8 @@ public class PaymentService {
                         .amount(event.amount())
                         .reason("취소된 주문에 늦은 결제 승인 이벤트가 도착했습니다. PG 환불 또는 수동 보정이 필요합니다.")
                         .pgOccurredAt(event.occurredAt())
-                        .build()));
+                        .build());
+        outboxEventService.recordPaymentReconciliationRequired(task);
 
         log.warn("event=payment.reconciliation_task_registered orderId={} userId={} pgEventId={} pgTransactionId={} amount={} taskId={}",
                 task.getOrderId(), task.getUserId(), task.getPgEventId(), task.getPgTransactionId(), task.getAmount(), task.getTaskId());
