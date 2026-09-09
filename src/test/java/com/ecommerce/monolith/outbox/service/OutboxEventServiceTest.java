@@ -13,10 +13,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -89,11 +96,67 @@ class OutboxEventServiceTest {
         assertThat(payload).doesNotContainKey("cardNumber");
     }
 
+    @Test
+    void findPublishableEventsReturnsPendingAndFailedEventsAvailableNow() {
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, objectMapper());
+        OutboxEvent event = outboxEvent(1L, OutboxEvent.OutboxStatus.PENDING, LocalDateTime.now().minusMinutes(1));
+        when(outboxEventRepository.findByStatusInAndAvailableAtLessThanEqualOrderByAvailableAtAscOutboxEventIdAsc(
+                anyCollection(),
+                any(LocalDateTime.class),
+                any()
+        )).thenReturn(List.of(event));
+
+        List<OutboxEvent> events = service.findPublishableEvents(10);
+
+        assertThat(events).containsExactly(event);
+        verify(outboxEventRepository).findByStatusInAndAvailableAtLessThanEqualOrderByAvailableAtAscOutboxEventIdAsc(
+                eq(List.of(OutboxEvent.OutboxStatus.PENDING, OutboxEvent.OutboxStatus.FAILED)),
+                any(LocalDateTime.class),
+                any()
+        );
+    }
+
+    @Test
+    void findPublishableEventsRejectsInvalidBatchSize() {
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, objectMapper());
+
+        assertThatThrownBy(() -> service.findPublishableEvents(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Outbox 발행 배치 크기는 1 이상이어야 합니다.");
+    }
+
+    @Test
+    void markPublishedChangesStatusAndClearsLastError() {
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, objectMapper());
+        OutboxEvent event = outboxEvent(1L, OutboxEvent.OutboxStatus.FAILED, LocalDateTime.now().minusMinutes(1));
+        event.setLastError("temporary failure");
+        when(outboxEventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        service.markPublished(1L);
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.PUBLISHED);
+        assertThat(event.getPublishedAt()).isNotNull();
+        assertThat(event.getLastError()).isNull();
+    }
+
     private ObjectMapper objectMapper() {
         return new ObjectMapper().registerModule(new JavaTimeModule());
     }
 
     private Map<String, Object> readPayload(String payload) throws Exception {
         return objectMapper().readValue(payload, Map.class);
+    }
+
+    private OutboxEvent outboxEvent(Long outboxEventId, OutboxEvent.OutboxStatus status, LocalDateTime availableAt) {
+        return OutboxEvent.builder()
+                .outboxEventId(outboxEventId)
+                .eventId(UUID.randomUUID())
+                .eventType(OutboxEvent.EventType.ORDER_CREATED)
+                .aggregateType(OutboxEvent.AggregateType.ORDER)
+                .aggregateId(1L)
+                .payload("{}")
+                .status(status)
+                .availableAt(availableAt)
+                .build();
     }
 }

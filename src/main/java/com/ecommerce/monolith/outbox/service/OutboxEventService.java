@@ -8,19 +8,28 @@ import com.ecommerce.monolith.payment.entity.PaymentReconciliationTask;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class OutboxEventService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+
+    private static final List<OutboxEvent.OutboxStatus> PUBLISHABLE_STATUSES = List.of(
+            OutboxEvent.OutboxStatus.PENDING,
+            OutboxEvent.OutboxStatus.FAILED
+    );
 
     public void recordOrderCreated(Order order) {
         saveEvent(
@@ -79,6 +88,26 @@ public class OutboxEventService {
                 task.getTaskId(),
                 payload
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<OutboxEvent> findPublishableEvents(int batchSize) {
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("Outbox 발행 배치 크기는 1 이상이어야 합니다.");
+        }
+
+        return outboxEventRepository.findByStatusInAndAvailableAtLessThanEqualOrderByAvailableAtAscOutboxEventIdAsc(
+                PUBLISHABLE_STATUSES,
+                LocalDateTime.now(),
+                PageRequest.of(0, batchSize)
+        );
+    }
+
+    public void markPublished(Long outboxEventId) {
+        OutboxEvent event = outboxEventRepository.findById(outboxEventId)
+                .orElseThrow(() -> new IllegalArgumentException("Outbox 이벤트를 찾을 수 없습니다. outboxEventId=" + outboxEventId));
+
+        event.markPublished(LocalDateTime.now());
     }
 
     private Map<String, Object> orderPayload(OutboxEvent.EventType eventType, Order order, String reason) {

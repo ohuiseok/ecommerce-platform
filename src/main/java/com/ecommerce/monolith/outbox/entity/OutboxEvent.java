@@ -98,4 +98,10 @@ public class OutboxEvent {
         FAILED,
         DEAD_LETTER
     }
+
+    public void markPublished(LocalDateTime publishedAt) {
+        this.status = OutboxStatus.PUBLISHED;
+        this.publishedAt = publishedAt;
+        this.lastError = null;
+    }
 }
