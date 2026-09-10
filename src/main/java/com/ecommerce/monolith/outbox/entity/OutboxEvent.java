@@ -9,6 +9,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -61,7 +62,7 @@ public class OutboxEvent {
     @Builder.Default
     private int retryCount = 0;
 
-    @Column(name = "last_error")
+    @Column(name = "last_error", columnDefinition = "TEXT")
     private String lastError;
 
     @Column(name = "available_at", nullable = false)
@@ -103,5 +104,24 @@ public class OutboxEvent {
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = publishedAt;
         this.lastError = null;
+    }
+
+    public void markFailed(String reason, LocalDateTime failedAt, Duration retryDelay, int maxRetryCount) {
+        if (maxRetryCount < 1) {
+            throw new IllegalArgumentException("Outbox 최대 재시도 횟수는 1 이상이어야 합니다.");
+        }
+
+        this.retryCount += 1;
+        this.lastError = reason;
+        this.publishedAt = null;
+
+        if (this.retryCount >= maxRetryCount) {
+            this.status = OutboxStatus.DEAD_LETTER;
+            this.availableAt = failedAt;
+            return;
+        }
+
+        this.status = OutboxStatus.FAILED;
+        this.availableAt = failedAt.plus(retryDelay);
     }
 }

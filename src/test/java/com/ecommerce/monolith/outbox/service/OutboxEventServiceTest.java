@@ -139,6 +139,40 @@ class OutboxEventServiceTest {
         assertThat(event.getLastError()).isNull();
     }
 
+    @Test
+    void markFailedIncrementsRetryCountAndSchedulesNextAttempt() {
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, objectMapper());
+        LocalDateTime previousAvailableAt = LocalDateTime.now().minusMinutes(1);
+        OutboxEvent event = outboxEvent(1L, OutboxEvent.OutboxStatus.PENDING, previousAvailableAt);
+        when(outboxEventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        service.markFailed(1L, "publisher timeout");
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.FAILED);
+        assertThat(event.getRetryCount()).isEqualTo(1);
+        assertThat(event.getLastError()).isEqualTo("publisher timeout");
+        assertThat(event.getPublishedAt()).isNull();
+        assertThat(event.getAvailableAt()).isAfter(previousAvailableAt);
+        assertThat(event.getAvailableAt()).isAfter(LocalDateTime.now().plusSeconds(50));
+        assertThat(event.getAvailableAt()).isBefore(LocalDateTime.now().plusSeconds(70));
+    }
+
+    @Test
+    void markFailedMovesEventToDeadLetterOnMaxRetryCount() {
+        OutboxEventService service = new OutboxEventService(outboxEventRepository, objectMapper());
+        OutboxEvent event = outboxEvent(1L, OutboxEvent.OutboxStatus.FAILED, LocalDateTime.now().minusMinutes(1));
+        event.setRetryCount(4);
+        when(outboxEventRepository.findById(1L)).thenReturn(Optional.of(event));
+
+        service.markFailed(1L, "downstream unavailable");
+
+        assertThat(event.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.DEAD_LETTER);
+        assertThat(event.getRetryCount()).isEqualTo(5);
+        assertThat(event.getLastError()).isEqualTo("downstream unavailable");
+        assertThat(event.getPublishedAt()).isNull();
+        assertThat(event.getAvailableAt()).isBeforeOrEqualTo(LocalDateTime.now());
+    }
+
     private ObjectMapper objectMapper() {
         return new ObjectMapper().registerModule(new JavaTimeModule());
     }

@@ -12,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -25,6 +26,9 @@ public class OutboxEventService {
 
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+
+    private static final int MAX_RETRY_COUNT = 5;
+    private static final Duration RETRY_DELAY = Duration.ofMinutes(1);
 
     private static final List<OutboxEvent.OutboxStatus> PUBLISHABLE_STATUSES = List.of(
             OutboxEvent.OutboxStatus.PENDING,
@@ -108,6 +112,13 @@ public class OutboxEventService {
                 .orElseThrow(() -> new IllegalArgumentException("Outbox 이벤트를 찾을 수 없습니다. outboxEventId=" + outboxEventId));
 
         event.markPublished(LocalDateTime.now());
+    }
+
+    public void markFailed(Long outboxEventId, String reason) {
+        OutboxEvent event = outboxEventRepository.findById(outboxEventId)
+                .orElseThrow(() -> new IllegalArgumentException("Outbox 이벤트를 찾을 수 없습니다. outboxEventId=" + outboxEventId));
+
+        event.markFailed(reason, LocalDateTime.now(), RETRY_DELAY, MAX_RETRY_COUNT);
     }
 
     private Map<String, Object> orderPayload(OutboxEvent.EventType eventType, Order order, String reason) {
