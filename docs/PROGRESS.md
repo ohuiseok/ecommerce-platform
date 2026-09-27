@@ -153,6 +153,7 @@
 - 2026-09-23: Phase 3 Day 6 - ADR-014 모듈러 모놀리식 공개 API 경계 규칙을 정했다.
 - 2026-09-24: Phase 3 Day 7 - ADR-015 SLO와 알림 초기 기준안을 작성했다.
 - 2026-09-26: Phase 4 - GitHub Actions에서 `./gradlew test`를 실행하는 CI 워크플로를 추가했다.
+- 2026-09-27: Phase 4 - ADR-016 기존 DB Flyway baseline 및 배포 호환 정책을 작성했다.
 
 ## 다음 작업
 
@@ -168,7 +169,6 @@
 
 ### Phase 4: 운영 기반과 현재 정합성 보강
 
-- 기존 DB에 Flyway를 도입하기 위한 baseline 및 배포 호환 정책을 ADR로 정한다.
 - Flyway 의존성과 실행 설정을 추가한다.
 - 현재 엔티티와 인덱스를 기준으로 Flyway 초기 baseline 마이그레이션을 추가한다.
 - 운영 프로필에서 Hibernate `ddl-auto=validate`를 사용하도록 변경한다.
