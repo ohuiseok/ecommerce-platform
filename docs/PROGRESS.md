@@ -155,6 +155,7 @@
 - 2026-09-26: Phase 4 - GitHub Actions에서 `./gradlew test`를 실행하는 CI 워크플로를 추가했다.
 - 2026-09-27: Phase 4 - ADR-016 기존 DB Flyway baseline 및 배포 호환 정책을 작성했다.
 - 2026-09-28: Phase 4 - Flyway 의존성과 baseline 실행 설정을 추가했다.
+- 2026-09-29: Phase 4 - 현재 엔티티와 인덱스를 기준으로 Flyway 초기 baseline 마이그레이션을 추가했다.
 
 ## 다음 작업
 
@@ -170,7 +171,6 @@
 
 ### Phase 4: 운영 기반과 현재 정합성 보강
 
-- 현재 엔티티와 인덱스를 기준으로 Flyway 초기 baseline 마이그레이션을 추가한다.
 - 운영 프로필에서 Hibernate `ddl-auto=validate`를 사용하도록 변경한다.
 - 재고 수량의 음수 및 주문·결제 금액의 음수를 막는 DB `CHECK` 제약을 추가한다.
 - `Order`에 낙관적 락 버전을 추가하고 동시 상태 변경 충돌을 일관된 에러로 변환한다.
