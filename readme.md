@@ -70,12 +70,13 @@ Gradle wrapper가 포함되어 있어 로컬 Gradle 설치 없이 실행할 수 
 | `SPRING_DATASOURCE_PASSWORD` | `postgres` | DB 비밀번호 |
 | `JWT_SECRET` | 개발용 기본값 | JWT 서명 키 |
 | `JWT_EXPIRATION` | `86400000` | Access token 만료 시간(ms) |
-| `SPRING_JPA_HIBERNATE_DDL_AUTO` | `update` | Hibernate DDL 전략 |
+| `SPRING_PROFILES_ACTIVE` | 없음 | 운영 실행 시 `prod` 지정 |
+| `SPRING_JPA_HIBERNATE_DDL_AUTO` | `update`, `prod` 프로필은 `validate` | Hibernate DDL 전략 |
 | `ADMIN_EMAIL` | 없음 | 시작 시 생성/갱신할 관리자 이메일 |
 | `ADMIN_PASSWORD` | 없음 | 시작 시 생성/갱신할 관리자 비밀번호 |
 | `ADMIN_NAME` | `Administrator` | 관리자 이름 |
 
-운영 환경에서는 `JWT_SECRET`, DB 계정, `SPRING_JPA_HIBERNATE_DDL_AUTO`를 반드시 별도로 설정해야 합니다.
+운영 환경에서는 `SPRING_PROFILES_ACTIVE=prod`, `JWT_SECRET`, DB 계정을 반드시 별도로 설정해야 합니다.
 관리자 계정은 `ADMIN_EMAIL`과 `ADMIN_PASSWORD`가 모두 설정된 경우에만 생성되거나 갱신됩니다.
 
 ## API 경로

@@ -56,3 +56,13 @@ logging:
     root: INFO
     com.ecommerce.monolith: DEBUG
     org.hibernate.SQL: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
