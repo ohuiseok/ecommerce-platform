@@ -19,6 +19,7 @@ public enum ErrorCode {
     // Order
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다"),
     INVALID_ORDER_STATUS(HttpStatus.BAD_REQUEST, "유효하지 않은 주문 상태입니다"),
+    ORDER_STATE_CONFLICT(HttpStatus.CONFLICT, "주문 상태가 이미 변경되었습니다"),
     ORDER_CANCELLATION_NOT_ALLOWED(HttpStatus.CONFLICT, "배송 중이거나 완료된 주문은 취소할 수 없습니다"),
 
     // Cart

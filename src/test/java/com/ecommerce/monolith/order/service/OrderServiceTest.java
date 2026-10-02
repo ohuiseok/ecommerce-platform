@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -97,7 +98,7 @@ class OrderServiceTest {
         request.setStatus("PROCESSING");
 
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         OrderResponse.OrderInfo result = orderService.updateOrderStatus(1L, request);
 
@@ -117,6 +118,22 @@ class OrderServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.INVALID_ORDER_STATUS);
         verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    void updateOrderStatusConvertsOptimisticLockConflict() {
+        Order order = orderWithStatus(Order.OrderStatus.CONFIRMED);
+        OrderRequest.StatusUpdate request = new OrderRequest.StatusUpdate();
+        request.setStatus("PROCESSING");
+
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(any(Order.class)))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Order.class, 1L));
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus(1L, request))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ORDER_STATE_CONFLICT);
     }
 
     @Test
@@ -157,7 +174,7 @@ class OrderServiceTest {
                 .build());
 
         when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         orderService.cancelPendingOrderAfterPaymentFailure(1L);
 
@@ -204,7 +221,7 @@ class OrderServiceTest {
                 eq(cutoff),
                 any()
         )).thenReturn(List.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         int expiredCount = orderService.expirePendingOrders(cutoff, 100);
 

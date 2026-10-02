@@ -1,8 +1,11 @@
 package com.ecommerce.monolith.common;
 
 import com.ecommerce.monolith.common.exception.BusinessException;
+import com.ecommerce.monolith.common.exception.ErrorCode;
+import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -33,6 +36,22 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(ex.getErrorCode().getStatus()).body(errorResponse);
+    }
+
+    @ExceptionHandler({OptimisticLockingFailureException.class, OptimisticLockException.class})
+    public ResponseEntity<ErrorResponse> handleOptimisticLockException(Exception ex, WebRequest request) {
+        log.warn("Optimistic lock conflict occurred: {}", ex.getMessage());
+
+        ErrorCode errorCode = ErrorCode.ORDER_STATE_CONFLICT;
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(errorCode.getStatus().value())
+                .error(errorCode.getStatus().getReasonPhrase())
+                .message(errorCode.getMessage())
+                .path(getPath(request))
+                .build();
+
+        return ResponseEntity.status(errorCode.getStatus()).body(errorResponse);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

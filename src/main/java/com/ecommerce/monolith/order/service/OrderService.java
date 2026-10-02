@@ -19,6 +19,7 @@ import com.ecommerce.monolith.user.dto.UserResponse;
 import com.ecommerce.monolith.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -186,7 +187,7 @@ public class OrderService {
         }
 
         order.updateStatus(newStatus);
-        Order updatedOrder = orderRepository.save(order);
+        Order updatedOrder = saveStatusChange(order);
 
         log.info("event=order.status_updated orderId={} status={}", orderId, newStatus);
 
@@ -198,7 +199,7 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
         order.cancelByUser();
-        orderRepository.save(order);
+        saveStatusChange(order);
 
         restoreOrderResources(order);
         outboxEventService.recordOrderCancelled(order, "USER_CANCELLED");
@@ -223,7 +224,7 @@ public class OrderService {
         }
 
         order.updateStatus(Order.OrderStatus.CANCELLED);
-        orderRepository.save(order);
+        saveStatusChange(order);
         restoreOrderResources(order);
         outboxEventService.recordOrderCancelled(order, "PAYMENT_FAILED");
 
@@ -259,7 +260,7 @@ public class OrderService {
         }
 
         order.updateStatus(Order.OrderStatus.CANCELLED);
-        orderRepository.save(order);
+        saveStatusChange(order);
         restoreOrderResources(order);
         outboxEventService.recordOrderCancelled(order, "PENDING_EXPIRED");
 
@@ -289,8 +290,19 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
         order.updateStatus(Order.OrderStatus.CONFIRMED);
-        orderRepository.save(order);
+        saveStatusChange(order);
 
         log.info("event=order.confirmed orderId={} userId={}", orderId, order.getUserId());
+    }
+
+    private Order saveStatusChange(Order order) {
+        try {
+            return orderRepository.saveAndFlush(order);
+        } catch (OptimisticLockingFailureException e) {
+            throw new BusinessException(
+                    ErrorCode.ORDER_STATE_CONFLICT,
+                    "주문 상태가 다른 요청에 의해 먼저 변경되었습니다. orderId=" + order.getOrderId()
+            );
+        }
     }
 }
