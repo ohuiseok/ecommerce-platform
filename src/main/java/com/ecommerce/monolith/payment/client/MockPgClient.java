@@ -1,6 +1,7 @@
 package com.ecommerce.monolith.payment.client;
 
 import com.ecommerce.monolith.payment.entity.Payment;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -13,8 +14,10 @@ import java.util.UUID;
  * 카드 결제는 카드번호 마지막 자리가 홀수이면 승인 거절을 재현해 실패 흐름을 테스트할 수 있게 한다.
  */
 @Component
-public class MockPgClient {
+@Profile({"local", "test"})
+public class MockPgClient implements PgClient {
 
+    @Override
     public PgResult charge(BigDecimal amount, Payment.PaymentMethod method, String cardNumber) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             return PgResult.failure("결제 금액이 유효하지 않습니다");
@@ -28,16 +31,6 @@ public class MockPgClient {
         }
 
         return PgResult.success("MOCK-" + UUID.randomUUID());
-    }
-
-    public record PgResult(boolean success, String transactionId, String failureReason) {
-        public static PgResult success(String transactionId) {
-            return new PgResult(true, transactionId, null);
-        }
-
-        public static PgResult failure(String reason) {
-            return new PgResult(false, null, reason);
-        }
     }
 
     public PgEvent toEvent(Long orderId, BigDecimal amount, PgResult result) {

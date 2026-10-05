@@ -7,6 +7,7 @@ import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.service.OrderService;
 import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.payment.client.MockPgClient;
+import com.ecommerce.monolith.payment.client.PgClient;
 import com.ecommerce.monolith.payment.dto.PaymentRequest;
 import com.ecommerce.monolith.payment.dto.PaymentResponse;
 import com.ecommerce.monolith.payment.entity.Payment;
@@ -34,7 +35,7 @@ public class PaymentService {
     private final PaymentReconciliationTaskRepository reconciliationTaskRepository;
     private final PaymentWebhookEventRepository webhookEventRepository;
     private final OrderService orderService;
-    private final MockPgClient mockPgClient;
+    private final PgClient pgClient;
     private final OutboxEventService outboxEventService;
 
     public PaymentResponse.PaymentInfo requestPayment(PaymentRequest.Create request) {
@@ -75,7 +76,7 @@ public class PaymentService {
                 .idempotencyKey(idempotencyKey)
                 .build();
 
-        MockPgClient.PgResult result = mockPgClient.charge(payment.getAmount(), payment.getMethod(), request.getCardNumber());
+        PgClient.PgResult result = pgClient.charge(payment.getAmount(), payment.getMethod(), request.getCardNumber());
         if (result.success()) {
             payment.complete(result.transactionId());
         } else {

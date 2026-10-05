@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: ecommerce-monolith
+  profiles:
+    default: local
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ecommerce}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}

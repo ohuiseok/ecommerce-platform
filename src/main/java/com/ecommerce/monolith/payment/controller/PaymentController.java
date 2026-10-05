@@ -2,7 +2,6 @@ package com.ecommerce.monolith.payment.controller;
 
 import com.ecommerce.monolith.order.dto.OrderResponse;
 import com.ecommerce.monolith.order.service.OrderService;
-import com.ecommerce.monolith.payment.client.MockPgClient;
 import com.ecommerce.monolith.payment.dto.PaymentRequest;
 import com.ecommerce.monolith.payment.dto.PaymentResponse;
 import com.ecommerce.monolith.payment.service.PaymentService;
@@ -63,12 +62,6 @@ public class PaymentController {
     @GetMapping("/reconciliation/tasks")
     public ResponseEntity<List<PaymentResponse.PaymentReconciliationTaskInfo>> getOpenPaymentReconciliationTasks() {
         return ResponseEntity.ok(paymentService.getOpenPaymentReconciliationTasks());
-    }
-
-    @PostMapping("/webhooks/mock-pg")
-    public ResponseEntity<PaymentResponse.PaymentWebhookEventInfo> receiveMockPgWebhook(
-            @RequestBody MockPgClient.PgEvent event) {
-        return ResponseEntity.ok(paymentService.processPaymentWebhookEvent(event));
     }
 
     @DeleteMapping("/{paymentId}")

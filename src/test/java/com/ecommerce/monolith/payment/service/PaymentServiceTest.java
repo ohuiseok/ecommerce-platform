@@ -7,6 +7,7 @@ import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.service.OrderService;
 import com.ecommerce.monolith.outbox.service.OutboxEventService;
 import com.ecommerce.monolith.payment.client.MockPgClient;
+import com.ecommerce.monolith.payment.client.PgClient;
 import com.ecommerce.monolith.payment.dto.PaymentRequest;
 import com.ecommerce.monolith.payment.dto.PaymentResponse;
 import com.ecommerce.monolith.payment.entity.Payment;
@@ -49,7 +50,7 @@ class PaymentServiceTest {
     private OrderService orderService;
 
     @Mock
-    private MockPgClient mockPgClient;
+    private PgClient pgClient;
 
     @Mock
     private OutboxEventService outboxEventService;
@@ -73,8 +74,8 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-1")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
-        when(mockPgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123452"))
-                .thenReturn(MockPgClient.PgResult.success("MOCK-TX-1"));
+        when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123452"))
+                .thenReturn(PgClient.PgResult.success("MOCK-TX-1"));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
             Payment payment = invocation.getArgument(0);
             payment.setPaymentId(100L);
@@ -106,8 +107,8 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-2")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
-        when(mockPgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123451"))
-                .thenReturn(MockPgClient.PgResult.failure("카드 승인이 거절되었습니다"));
+        when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123451"))
+                .thenReturn(PgClient.PgResult.failure("카드 승인이 거절되었습니다"));
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         PaymentResponse.PaymentInfo result = paymentService.requestPayment(request);
@@ -140,7 +141,7 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_ORDER_STATUS);
 
-        verify(mockPgClient, never()).charge(any(), any(), any());
+        verify(pgClient, never()).charge(any(), any(), any());
         verify(paymentRepository, never()).save(any());
     }
 
@@ -206,7 +207,7 @@ class PaymentServiceTest {
         assertThat(result.getPaymentId()).isEqualTo(100L);
         assertThat(result.getStatus()).isEqualTo(Payment.PaymentStatus.FAILED);
         assertThat(result.getIdempotencyKey()).isEqualTo("pay-key-4");
-        verify(mockPgClient, never()).charge(any(), any(), any());
+        verify(pgClient, never()).charge(any(), any(), any());
         verify(paymentRepository, never()).save(any());
         verify(orderService, never()).markOrderConfirmed(any());
         verify(outboxEventService, never()).recordPaymentCompleted(any());

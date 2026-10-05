@@ -14,7 +14,7 @@ class MockPgClientTest {
 
     @Test
     void toEventCreatesApprovedEventFromSuccessfulChargeResult() {
-        MockPgClient.PgResult chargeResult = MockPgClient.PgResult.success("MOCK-TX-1");
+        PgClient.PgResult chargeResult = PgClient.PgResult.success("MOCK-TX-1");
 
         MockPgClient.PgEvent event = mockPgClient.toEvent(1L, BigDecimal.valueOf(12000), chargeResult);
 
@@ -30,7 +30,7 @@ class MockPgClientTest {
 
     @Test
     void toEventCreatesFailedEventFromFailedChargeResult() {
-        MockPgClient.PgResult chargeResult = MockPgClient.PgResult.failure("카드 승인이 거절되었습니다");
+        PgClient.PgResult chargeResult = PgClient.PgResult.failure("카드 승인이 거절되었습니다");
 
         MockPgClient.PgEvent event = mockPgClient.toEvent(1L, BigDecimal.valueOf(12000), chargeResult);
 
@@ -55,7 +55,7 @@ class MockPgClientTest {
         MockPgClient.PgEvent original = mockPgClient.toEvent(
                 1L,
                 BigDecimal.valueOf(12000),
-                MockPgClient.PgResult.success("MOCK-TX-1")
+                PgClient.PgResult.success("MOCK-TX-1")
         );
 
         MockPgClient.PgEvent duplicate = mockPgClient.duplicateDelivery(original);
@@ -89,12 +89,12 @@ class MockPgClientTest {
 
     @Test
     void chargeResultCanStillBeCreatedFromMockCardRule() {
-        MockPgClient.PgResult success = mockPgClient.charge(
+        PgClient.PgResult success = mockPgClient.charge(
                 BigDecimal.valueOf(12000),
                 Payment.PaymentMethod.CARD,
                 "4111111111111112"
         );
-        MockPgClient.PgResult failure = mockPgClient.charge(
+        PgClient.PgResult failure = mockPgClient.charge(
                 BigDecimal.valueOf(12000),
                 Payment.PaymentMethod.CARD,
                 "4111111111111111"
