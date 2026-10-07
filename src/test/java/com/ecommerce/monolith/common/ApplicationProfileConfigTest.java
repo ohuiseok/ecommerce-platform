@@ -52,6 +52,20 @@ class ApplicationProfileConfigTest {
         assertThat(prodPropertySource.getProperty("spring.jpa.show-sql")).isEqualTo(false);
     }
 
+    @Test
+    void prodProfileLimitsActuatorExposureAndHealthDetails() throws IOException {
+        YamlPropertySourceLoader loader = new YamlPropertySourceLoader();
+        List<PropertySource<?>> propertySources = loader.load("application", new ClassPathResource("application.yml"));
+
+        PropertySource<?> prodPropertySource = propertySources.stream()
+                .filter(propertySource -> "prod".equals(propertySource.getProperty("spring.config.activate.on-profile")))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(prodPropertySource.getProperty("management.endpoints.web.exposure.include")).isEqualTo("health");
+        assertThat(prodPropertySource.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
+    }
+
     private String[] profileValues(Class<?> type) {
         MergedAnnotation<Profile> profile = MergedAnnotations.from(type).get(Profile.class);
         return profile.synthesize().value();
