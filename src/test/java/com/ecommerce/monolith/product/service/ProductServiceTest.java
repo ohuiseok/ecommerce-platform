@@ -13,10 +13,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,6 +29,39 @@ class ProductServiceTest {
 
     @InjectMocks
     private ProductService productService;
+
+    @Test
+    void updateProductRequestDoesNotExposeStockQuantity() {
+        boolean hasStockQuantity = Arrays.stream(ProductRequest.Update.class.getDeclaredFields())
+                .anyMatch(field -> field.getName().equals("stockQuantity"));
+
+        assertThat(hasStockQuantity).isFalse();
+    }
+
+    @Test
+    void updateProductDoesNotChangeStockQuantity() {
+        Product product = Product.builder()
+                .productId(1L)
+                .name("Phone")
+                .description("Old description")
+                .price(BigDecimal.valueOf(1000))
+                .stockQuantity(3)
+                .status(Product.ProductStatus.ACTIVE)
+                .build();
+        ProductRequest.Update request = new ProductRequest.Update();
+        request.setName("Updated Phone");
+        request.setPrice(BigDecimal.valueOf(1200));
+
+        when(productRepository.findById(1L)).thenReturn(Optional.of(product));
+        when(productRepository.save(product)).thenReturn(product);
+
+        ProductResponse.ProductInfo result = productService.updateProduct(1L, request);
+
+        assertThat(result.getName()).isEqualTo("Updated Phone");
+        assertThat(result.getPrice()).isEqualByComparingTo("1200");
+        assertThat(result.getStockQuantity()).isEqualTo(3);
+        verify(productRepository).save(product);
+    }
 
     @Test
     void updateStockDecreasesStockWithConditionalUpdate() {

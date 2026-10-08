@@ -117,9 +117,6 @@ public class ProductService {
         if (request.getPrice() != null) {
             product.setPrice(request.getPrice());
         }
-        if (request.getStockQuantity() != null) {
-            product.setStockQuantity(request.getStockQuantity());
-        }
         if (request.getCategory() != null) {
             product.setCategory(request.getCategory());
         }
