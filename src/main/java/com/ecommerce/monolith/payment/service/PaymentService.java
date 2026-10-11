@@ -76,14 +76,20 @@ public class PaymentService {
                 .idempotencyKey(idempotencyKey)
                 .build();
 
-        PgClient.PgResult result = pgClient.charge(payment.getAmount(), payment.getMethod(), request.getCardNumber());
+        Payment savedPayment = paymentRepository.save(payment);
+
+        PgClient.PgResult result = pgClient.charge(
+                savedPayment.getAmount(),
+                savedPayment.getMethod(),
+                request.getCardNumber()
+        );
         if (result.success()) {
-            payment.complete(result.transactionId());
+            savedPayment.complete(result.transactionId());
         } else {
-            payment.fail(result.failureReason());
+            savedPayment.fail(result.failureReason());
         }
 
-        Payment savedPayment = paymentRepository.save(payment);
+        savedPayment = paymentRepository.save(savedPayment);
 
         if (savedPayment.getStatus() == Payment.PaymentStatus.COMPLETED) {
             orderService.markOrderConfirmed(order.getOrderId());

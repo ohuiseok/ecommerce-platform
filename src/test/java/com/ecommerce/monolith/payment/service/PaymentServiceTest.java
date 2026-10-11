@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,8 +78,10 @@ class PaymentServiceTest {
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
         when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123452"))
                 .thenReturn(PgClient.PgResult.success("MOCK-TX-1"));
+        List<Payment.PaymentStatus> savedStatuses = new ArrayList<>();
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
             Payment payment = invocation.getArgument(0);
+            savedStatuses.add(payment.getStatus());
             payment.setPaymentId(100L);
             return payment;
         });
@@ -87,6 +91,8 @@ class PaymentServiceTest {
         assertThat(result.getStatus()).isEqualTo(Payment.PaymentStatus.COMPLETED);
         assertThat(result.getPgTransactionId()).isEqualTo("MOCK-TX-1");
         assertThat(result.getIdempotencyKey()).isEqualTo("pay-key-1");
+        assertThat(savedStatuses).containsExactly(Payment.PaymentStatus.PROCESSING, Payment.PaymentStatus.COMPLETED);
+        verify(paymentRepository, times(2)).save(any(Payment.class));
         verify(orderService).markOrderConfirmed(1L);
         verify(outboxEventService).recordPaymentCompleted(any(Payment.class));
     }
@@ -109,12 +115,19 @@ class PaymentServiceTest {
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
         when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123451"))
                 .thenReturn(PgClient.PgResult.failure("카드 승인이 거절되었습니다"));
-        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        List<Payment.PaymentStatus> savedStatuses = new ArrayList<>();
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
+            Payment payment = invocation.getArgument(0);
+            savedStatuses.add(payment.getStatus());
+            return payment;
+        });
 
         PaymentResponse.PaymentInfo result = paymentService.requestPayment(request);
 
         assertThat(result.getStatus()).isEqualTo(Payment.PaymentStatus.FAILED);
         assertThat(result.getFailureReason()).isEqualTo("카드 승인이 거절되었습니다");
+        assertThat(savedStatuses).containsExactly(Payment.PaymentStatus.PROCESSING, Payment.PaymentStatus.FAILED);
+        verify(paymentRepository, times(2)).save(any(Payment.class));
         verify(orderService, never()).markOrderConfirmed(any());
         verify(orderService).cancelPendingOrderAfterPaymentFailure(1L);
         verify(outboxEventService).recordPaymentFailed(any(Payment.class));

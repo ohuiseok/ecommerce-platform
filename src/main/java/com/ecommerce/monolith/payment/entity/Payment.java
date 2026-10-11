@@ -46,7 +46,7 @@ public class Payment {
 
     @Enumerated(EnumType.STRING)
     @Builder.Default
-    private PaymentStatus status = PaymentStatus.PENDING;
+    private PaymentStatus status = PaymentStatus.PROCESSING;
 
     @Column(name = "idempotency_key", length = 100)
     private String idempotencyKey;
@@ -73,7 +73,7 @@ public class Payment {
     }
 
     public enum PaymentStatus {
-        PENDING, COMPLETED, FAILED, CANCELLED
+        PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED
     }
 
     public void complete(String pgTransactionId) {
