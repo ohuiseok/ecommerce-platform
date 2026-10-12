@@ -216,9 +216,10 @@ class OrderServiceTest {
                 .quantity(2)
                 .build());
 
-        when(orderRepository.findByStatusAndCreatedAtLessThanEqual(
-                eq(Order.OrderStatus.PENDING),
+        when(orderRepository.findExpirablePendingOrders(
+                eq(Order.OrderStatus.PENDING.name()),
                 eq(cutoff),
+                any(),
                 any()
         )).thenReturn(List.of(order));
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -237,7 +238,7 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.expirePendingOrders(LocalDateTime.now(), 0))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("batchSize must be positive");
-        verify(orderRepository, never()).findByStatusAndCreatedAtLessThanEqual(any(), any(), any());
+        verify(orderRepository, never()).findExpirablePendingOrders(any(), any(), any(), any());
     }
 
     private OrderRequest.OrderItemRequest orderItemRequest() {

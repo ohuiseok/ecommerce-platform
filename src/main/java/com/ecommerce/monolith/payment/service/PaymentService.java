@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,7 +28,6 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
 @Slf4j
 public class PaymentService {
 
@@ -37,26 +37,39 @@ public class PaymentService {
     private final OrderService orderService;
     private final PgClient pgClient;
     private final OutboxEventService outboxEventService;
+    private final TransactionTemplate transactionTemplate;
 
     public PaymentResponse.PaymentInfo requestPayment(PaymentRequest.Create request) {
-        OrderResponse.OrderInfo order = orderService.getOrder(request.getOrderId());
         String idempotencyKey = request.getIdempotencyKey().trim();
-        paymentRepository.lockIdempotencyKey(order.getOrderId() + ":" + idempotencyKey);
+        PaymentAttempt attempt = transactionTemplate.execute(status -> preparePayment(request, idempotencyKey));
+        if (!attempt.requiresPgCharge()) {
+            return PaymentResponse.PaymentInfo.from(attempt.payment());
+        }
 
-        return paymentRepository.findByOrderIdAndIdempotencyKey(order.getOrderId(), idempotencyKey)
-                .map(payment -> {
-                    log.info("event=payment.idempotent_retry orderId={} paymentId={} userId={} status={}",
-                            order.getOrderId(), payment.getPaymentId(), payment.getUserId(), payment.getStatus());
-                    return PaymentResponse.PaymentInfo.from(payment);
-                })
-                .orElseGet(() -> createPayment(request, order, idempotencyKey));
+        Payment payment = attempt.payment();
+        PgClient.PgResult result = pgClient.charge(
+                payment.getAmount(),
+                payment.getMethod(),
+                request.getCardNumber()
+        );
+
+        Payment savedPayment = transactionTemplate.execute(status -> applyPgResult(payment.getPaymentId(), result));
+        return PaymentResponse.PaymentInfo.from(savedPayment);
     }
 
-    private PaymentResponse.PaymentInfo createPayment(
-            PaymentRequest.Create request,
-            OrderResponse.OrderInfo order,
-            String idempotencyKey
-    ) {
+    private PaymentAttempt preparePayment(PaymentRequest.Create request, String idempotencyKey) {
+        OrderResponse.OrderInfo order = orderService.getOrderForPaymentUpdate(request.getOrderId());
+        paymentRepository.lockIdempotencyKey(order.getOrderId() + ":" + idempotencyKey);
+
+        Optional<Payment> existingPayment =
+                paymentRepository.findByOrderIdAndIdempotencyKey(order.getOrderId(), idempotencyKey);
+        if (existingPayment.isPresent()) {
+            Payment payment = existingPayment.get();
+            log.info("event=payment.idempotent_retry orderId={} paymentId={} userId={} status={}",
+                    order.getOrderId(), payment.getPaymentId(), payment.getUserId(), payment.getStatus());
+            return PaymentAttempt.existing(payment);
+        }
+
         if (paymentRepository.existsByOrderIdAndStatus(order.getOrderId(), Payment.PaymentStatus.COMPLETED)) {
             throw new BusinessException(ErrorCode.PAYMENT_ALREADY_PROCESSED);
         }
@@ -77,12 +90,13 @@ public class PaymentService {
                 .build();
 
         Payment savedPayment = paymentRepository.save(payment);
+        return PaymentAttempt.created(savedPayment);
+    }
 
-        PgClient.PgResult result = pgClient.charge(
-                savedPayment.getAmount(),
-                savedPayment.getMethod(),
-                request.getCardNumber()
-        );
+    private Payment applyPgResult(Long paymentId, PgClient.PgResult result) {
+        Payment savedPayment = paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
         if (result.success()) {
             savedPayment.complete(result.transactionId());
         } else {
@@ -92,18 +106,29 @@ public class PaymentService {
         savedPayment = paymentRepository.save(savedPayment);
 
         if (savedPayment.getStatus() == Payment.PaymentStatus.COMPLETED) {
-            orderService.markOrderConfirmed(order.getOrderId());
+            orderService.markOrderConfirmed(savedPayment.getOrderId());
             outboxEventService.recordPaymentCompleted(savedPayment);
             log.info("event=payment.completed orderId={} paymentId={} userId={} amount={}",
-                    order.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getAmount());
+                    savedPayment.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getAmount());
         } else {
-            orderService.cancelPendingOrderAfterPaymentFailure(order.getOrderId());
+            orderService.cancelPendingOrderAfterPaymentFailure(savedPayment.getOrderId());
             outboxEventService.recordPaymentFailed(savedPayment);
             log.warn("event=payment.failed orderId={} paymentId={} userId={} reason={}",
-                    order.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getFailureReason());
+                    savedPayment.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getFailureReason());
         }
 
-        return PaymentResponse.PaymentInfo.from(savedPayment);
+        return savedPayment;
+    }
+
+    private record PaymentAttempt(Payment payment, boolean requiresPgCharge) {
+
+        private static PaymentAttempt created(Payment payment) {
+            return new PaymentAttempt(payment, true);
+        }
+
+        private static PaymentAttempt existing(Payment payment) {
+            return new PaymentAttempt(payment, false);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -129,6 +154,7 @@ public class PaymentService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public Optional<PaymentResponse.PaymentReconciliationTaskInfo> registerLateApprovedPaymentForReconciliation(
             MockPgClient.PgEvent event
     ) {
@@ -168,6 +194,7 @@ public class PaymentService {
         return Optional.of(PaymentResponse.PaymentReconciliationTaskInfo.from(task));
     }
 
+    @Transactional
     public PaymentResponse.PaymentWebhookEventInfo processPaymentWebhookEvent(MockPgClient.PgEvent event) {
         Optional<PaymentWebhookEvent> existing = webhookEventRepository.findByPgEventId(event.eventId());
         if (existing.isPresent()) {
@@ -255,6 +282,7 @@ public class PaymentService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public PaymentResponse.PaymentInfo cancelPayment(Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));

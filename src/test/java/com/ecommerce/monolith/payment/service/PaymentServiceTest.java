@@ -16,11 +16,13 @@ import com.ecommerce.monolith.payment.entity.PaymentWebhookEvent;
 import com.ecommerce.monolith.payment.repository.PaymentRepository;
 import com.ecommerce.monolith.payment.repository.PaymentReconciliationTaskRepository;
 import com.ecommerce.monolith.payment.repository.PaymentWebhookEventRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -32,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,8 +60,18 @@ class PaymentServiceTest {
     @Mock
     private OutboxEventService outboxEventService;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private PaymentService paymentService;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> invocation
+                .<org.springframework.transaction.support.TransactionCallback<?>>getArgument(0)
+                .doInTransaction(null));
+    }
 
     @Test
     void requestPaymentConfirmsOrderWhenChargeSucceeds() {
@@ -68,7 +81,7 @@ class PaymentServiceTest {
         request.setCardNumber("1234567890123452");
         request.setIdempotencyKey(" pay-key-1 ");
 
-        when(orderService.getOrder(1L)).thenReturn(OrderResponse.OrderInfo.builder()
+        when(orderService.getOrderForPaymentUpdate(1L)).thenReturn(OrderResponse.OrderInfo.builder()
                 .orderId(1L)
                 .userId(1L)
                 .totalAmount(BigDecimal.valueOf(2000))
@@ -76,6 +89,15 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-1")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
+        when(paymentRepository.findById(100L)).thenAnswer(invocation -> Optional.of(Payment.builder()
+                .paymentId(100L)
+                .orderId(1L)
+                .userId(1L)
+                .amount(BigDecimal.valueOf(2000))
+                .method(Payment.PaymentMethod.CARD)
+                .status(Payment.PaymentStatus.PROCESSING)
+                .idempotencyKey("pay-key-1")
+                .build()));
         when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123452"))
                 .thenReturn(PgClient.PgResult.success("MOCK-TX-1"));
         List<Payment.PaymentStatus> savedStatuses = new ArrayList<>();
@@ -105,7 +127,7 @@ class PaymentServiceTest {
         request.setCardNumber("1234567890123451");
         request.setIdempotencyKey("pay-key-2");
 
-        when(orderService.getOrder(1L)).thenReturn(OrderResponse.OrderInfo.builder()
+        when(orderService.getOrderForPaymentUpdate(1L)).thenReturn(OrderResponse.OrderInfo.builder()
                 .orderId(1L)
                 .userId(1L)
                 .totalAmount(BigDecimal.valueOf(2000))
@@ -113,12 +135,22 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-2")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
+        when(paymentRepository.findById(101L)).thenAnswer(invocation -> Optional.of(Payment.builder()
+                .paymentId(101L)
+                .orderId(1L)
+                .userId(1L)
+                .amount(BigDecimal.valueOf(2000))
+                .method(Payment.PaymentMethod.CARD)
+                .status(Payment.PaymentStatus.PROCESSING)
+                .idempotencyKey("pay-key-2")
+                .build()));
         when(pgClient.charge(BigDecimal.valueOf(2000), Payment.PaymentMethod.CARD, "1234567890123451"))
                 .thenReturn(PgClient.PgResult.failure("카드 승인이 거절되었습니다"));
         List<Payment.PaymentStatus> savedStatuses = new ArrayList<>();
         when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
             Payment payment = invocation.getArgument(0);
             savedStatuses.add(payment.getStatus());
+            payment.setPaymentId(101L);
             return payment;
         });
 
@@ -141,7 +173,7 @@ class PaymentServiceTest {
         request.setCardNumber("1234567890123452");
         request.setIdempotencyKey("pay-key-cancelled");
 
-        when(orderService.getOrder(1L)).thenReturn(OrderResponse.OrderInfo.builder()
+        when(orderService.getOrderForPaymentUpdate(1L)).thenReturn(OrderResponse.OrderInfo.builder()
                 .orderId(1L)
                 .userId(1L)
                 .totalAmount(BigDecimal.valueOf(2000))
@@ -174,7 +206,7 @@ class PaymentServiceTest {
                 .status(Payment.PaymentStatus.COMPLETED)
                 .build();
 
-        when(orderService.getOrder(1L)).thenReturn(OrderResponse.OrderInfo.builder()
+        when(orderService.getOrderForPaymentUpdate(1L)).thenReturn(OrderResponse.OrderInfo.builder()
                 .orderId(1L)
                 .userId(1L)
                 .totalAmount(BigDecimal.valueOf(2000))
@@ -207,7 +239,7 @@ class PaymentServiceTest {
                 .failureReason("카드 승인이 거절되었습니다")
                 .build();
 
-        when(orderService.getOrder(1L)).thenReturn(OrderResponse.OrderInfo.builder()
+        when(orderService.getOrderForPaymentUpdate(1L)).thenReturn(OrderResponse.OrderInfo.builder()
                 .orderId(1L)
                 .userId(1L)
                 .totalAmount(BigDecimal.valueOf(2000))

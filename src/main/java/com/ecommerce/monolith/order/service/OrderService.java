@@ -42,6 +42,8 @@ public class OrderService {
     private final CartService cartService;
     private final CouponService couponService;
     private final OutboxEventService outboxEventService;
+    private static final List<String> EXPIRATION_BLOCKING_PAYMENT_STATUSES =
+            List.of("PROCESSING", "COMPLETED");
 
     public OrderResponse.OrderInfo createOrder(Long userId, OrderRequest.Create request) {
         // 1. 사용자 정보 확인
@@ -163,6 +165,15 @@ public class OrderService {
         return OrderResponse.OrderInfo.from(order);
     }
 
+    public OrderResponse.OrderInfo getOrderForPaymentUpdate(Long orderId) {
+        Order order = orderRepository.findByIdForUpdate(orderId);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND);
+        }
+
+        return OrderResponse.OrderInfo.from(order);
+    }
+
     @Transactional(readOnly = true)
     public Page<OrderResponse.OrderInfo> getOrdersByUserId(Long userId, Pageable pageable) {
         Page<Order> orders = orderRepository.findByUserId(userId, pageable);
@@ -236,9 +247,10 @@ public class OrderService {
             throw new IllegalArgumentException("batchSize must be positive");
         }
 
-        List<Order> expiredOrders = orderRepository.findByStatusAndCreatedAtLessThanEqual(
-                Order.OrderStatus.PENDING,
+        List<Order> expiredOrders = orderRepository.findExpirablePendingOrders(
+                Order.OrderStatus.PENDING.name(),
                 cutoff,
+                EXPIRATION_BLOCKING_PAYMENT_STATUSES,
                 PageRequest.of(0, batchSize)
         );
 
@@ -256,6 +268,15 @@ public class OrderService {
         if (order.getStatus() != Order.OrderStatus.PENDING) {
             log.info("event=order.expiration_skipped orderId={} userId={} status={}",
                     order.getOrderId(), order.getUserId(), order.getStatus());
+            return false;
+        }
+
+        if (orderRepository.existsPaymentByOrderIdAndStatusIn(
+                order.getOrderId(),
+                EXPIRATION_BLOCKING_PAYMENT_STATUSES
+        )) {
+            log.info("event=order.expiration_skipped orderId={} userId={} reason=payment_in_progress_or_completed",
+                    order.getOrderId(), order.getUserId());
             return false;
         }
 
