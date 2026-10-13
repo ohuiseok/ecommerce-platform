@@ -89,7 +89,7 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-1")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
-        when(paymentRepository.findById(100L)).thenAnswer(invocation -> Optional.of(Payment.builder()
+        when(paymentRepository.findByIdForUpdate(100L)).thenAnswer(invocation -> Optional.of(Payment.builder()
                 .paymentId(100L)
                 .orderId(1L)
                 .userId(1L)
@@ -135,7 +135,7 @@ class PaymentServiceTest {
                 .build());
         when(paymentRepository.findByOrderIdAndIdempotencyKey(1L, "pay-key-2")).thenReturn(Optional.empty());
         when(paymentRepository.existsByOrderIdAndStatus(1L, Payment.PaymentStatus.COMPLETED)).thenReturn(false);
-        when(paymentRepository.findById(101L)).thenAnswer(invocation -> Optional.of(Payment.builder()
+        when(paymentRepository.findByIdForUpdate(101L)).thenAnswer(invocation -> Optional.of(Payment.builder()
                 .paymentId(101L)
                 .orderId(1L)
                 .userId(1L)
@@ -255,6 +255,32 @@ class PaymentServiceTest {
         verify(pgClient, never()).charge(any(), any(), any());
         verify(paymentRepository, never()).save(any());
         verify(orderService, never()).markOrderConfirmed(any());
+        verify(outboxEventService, never()).recordPaymentCompleted(any());
+        verify(outboxEventService, never()).recordPaymentFailed(any());
+    }
+
+    @Test
+    void applyPgResultReturnsExistingFinalPaymentWithoutDuplicatingSideEffects() {
+        Payment completed = Payment.builder()
+                .paymentId(100L)
+                .orderId(1L)
+                .userId(1L)
+                .amount(BigDecimal.valueOf(2000))
+                .method(Payment.PaymentMethod.CARD)
+                .status(Payment.PaymentStatus.COMPLETED)
+                .pgTransactionId("MOCK-TX-1")
+                .idempotencyKey("pay-key-1")
+                .build();
+
+        when(paymentRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(completed));
+
+        Payment result = paymentService.applyPgResult(100L, PgClient.PgResult.success("MOCK-TX-DUPLICATE"));
+
+        assertThat(result.getStatus()).isEqualTo(Payment.PaymentStatus.COMPLETED);
+        assertThat(result.getPgTransactionId()).isEqualTo("MOCK-TX-1");
+        verify(paymentRepository, never()).save(any());
+        verify(orderService, never()).markOrderConfirmed(any());
+        verify(orderService, never()).cancelPendingOrderAfterPaymentFailure(any());
         verify(outboxEventService, never()).recordPaymentCompleted(any());
         verify(outboxEventService, never()).recordPaymentFailed(any());
     }

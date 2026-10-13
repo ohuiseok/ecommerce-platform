@@ -93,9 +93,15 @@ public class PaymentService {
         return PaymentAttempt.created(savedPayment);
     }
 
-    private Payment applyPgResult(Long paymentId, PgClient.PgResult result) {
-        Payment savedPayment = paymentRepository.findById(paymentId)
+    Payment applyPgResult(Long paymentId, PgClient.PgResult result) {
+        Payment savedPayment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+
+        if (savedPayment.getStatus() != Payment.PaymentStatus.PROCESSING) {
+            log.info("event=payment.pg_result_already_applied orderId={} paymentId={} userId={} status={}",
+                    savedPayment.getOrderId(), savedPayment.getPaymentId(), savedPayment.getUserId(), savedPayment.getStatus());
+            return savedPayment;
+        }
 
         if (result.success()) {
             savedPayment.complete(result.transactionId());
