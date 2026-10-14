@@ -12,6 +12,8 @@ public interface PaymentReconciliationTaskRepository extends JpaRepository<Payme
 
     Optional<PaymentReconciliationTask> findByPgEventId(String pgEventId);
 
+    Optional<PaymentReconciliationTask> findByPaymentId(Long paymentId);
+
     List<PaymentReconciliationTask> findByStatusOrderByCreatedAtDesc(
             PaymentReconciliationTask.ReconciliationStatus status
     );

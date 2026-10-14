@@ -170,6 +170,7 @@
 - 2026-10-11: Phase 5 - 결제 요청 row를 `PROCESSING`으로 먼저 저장하도록 구현했다.
 - 2026-10-12: Phase 5 - Mock PG 승인 호출을 DB 트랜잭션 밖으로 분리했다.
 - 2026-10-13: Phase 5 - PG 성공·실패 결과를 `PROCESSING` 결제에만 멱등적으로 반영하도록 구현했다.
+- 2026-10-14: Phase 5 - PG 타임아웃으로 오래 남은 `PROCESSING` 결제를 운영 보정 대상으로 등록하도록 구현했다.
 
 ## 다음 작업
 
@@ -185,7 +186,6 @@
 
 ### Phase 5: 결제 트랜잭션과 Outbox 실행 경로
 
-- PG 타임아웃으로 오래 남은 `PROCESSING` 결제를 운영 보정 대상으로 등록한다.
 - 동일 idempotency key 결제와 PG 타임아웃 재시도 통합 테스트를 추가한다.
 - `OutboxPublisher` 포트를 추가하고 Outbox 서비스가 구체적 전송 기술에 의존하지 않도록 한다.
 - 로컬에서 사용할 수 있는 로그 기반 Outbox publisher와 단위 테스트를 추가한다.

@@ -18,10 +18,12 @@ import com.ecommerce.monolith.payment.repository.PaymentReconciliationTaskReposi
 import com.ecommerce.monolith.payment.repository.PaymentWebhookEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -198,6 +200,48 @@ public class PaymentService {
                 task.getOrderId(), task.getUserId(), task.getPgEventId(), task.getPgTransactionId(), task.getAmount(), task.getTaskId());
 
         return Optional.of(PaymentResponse.PaymentReconciliationTaskInfo.from(task));
+    }
+
+    @Transactional
+    public int registerStaleProcessingPaymentsForReconciliation(LocalDateTime cutoff, int batchSize) {
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("결제 보정 배치 크기는 1 이상이어야 합니다.");
+        }
+
+        List<Payment> stalePayments = paymentRepository
+                .findByStatusAndCreatedAtLessThanEqualOrderByCreatedAtAscPaymentIdAsc(
+                        Payment.PaymentStatus.PROCESSING,
+                        cutoff,
+                        PageRequest.of(0, batchSize)
+                );
+
+        int registeredCount = 0;
+        for (Payment payment : stalePayments) {
+            if (reconciliationTaskRepository.findByPaymentId(payment.getPaymentId()).isPresent()) {
+                log.info("event=payment.processing_timeout_reconciliation_skipped orderId={} paymentId={} userId={} reason=already_registered",
+                        payment.getOrderId(), payment.getPaymentId(), payment.getUserId());
+                continue;
+            }
+
+            PaymentReconciliationTask task = reconciliationTaskRepository.save(PaymentReconciliationTask.builder()
+                    .type(PaymentReconciliationTask.ReconciliationType.PG_TIMEOUT_PROCESSING_PAYMENT)
+                    .orderId(payment.getOrderId())
+                    .userId(payment.getUserId())
+                    .paymentId(payment.getPaymentId())
+                    .idempotencyKey(payment.getIdempotencyKey())
+                    .paymentMethod(payment.getMethod())
+                    .amount(payment.getAmount())
+                    .reason("PG 응답 타임아웃 또는 결과 불명으로 결제가 PROCESSING 상태에 오래 남았습니다. PG 승인 여부 확인이 필요합니다.")
+                    .pgOccurredAt(LocalDateTime.now())
+                    .build());
+            outboxEventService.recordPaymentReconciliationRequired(task);
+            registeredCount++;
+
+            log.warn("event=payment.processing_timeout_reconciliation_registered orderId={} paymentId={} userId={} amount={} taskId={}",
+                    task.getOrderId(), task.getPaymentId(), task.getUserId(), task.getAmount(), task.getTaskId());
+        }
+
+        return registeredCount;
     }
 
     @Transactional

@@ -464,6 +464,81 @@ class PaymentServiceTest {
     }
 
     @Test
+    void registerStaleProcessingPaymentsForReconciliationCreatesOpenTaskOncePerPayment() {
+        LocalDateTime cutoff = LocalDateTime.of(2026, 10, 14, 10, 0);
+        Payment stalePayment = Payment.builder()
+                .paymentId(300L)
+                .orderId(1L)
+                .userId(10L)
+                .amount(BigDecimal.valueOf(12000))
+                .method(Payment.PaymentMethod.CARD)
+                .status(Payment.PaymentStatus.PROCESSING)
+                .idempotencyKey("pay-key-timeout")
+                .build();
+
+        when(paymentRepository.findByStatusAndCreatedAtLessThanEqualOrderByCreatedAtAscPaymentIdAsc(
+                any(), any(), any()
+        )).thenReturn(List.of(stalePayment));
+        when(reconciliationTaskRepository.findByPaymentId(300L)).thenReturn(Optional.empty());
+        when(reconciliationTaskRepository.save(any(PaymentReconciliationTask.class))).thenAnswer(invocation -> {
+            PaymentReconciliationTask task = invocation.getArgument(0);
+            task.setTaskId(500L);
+            return task;
+        });
+
+        int registeredCount = paymentService.registerStaleProcessingPaymentsForReconciliation(cutoff, 100);
+
+        assertThat(registeredCount).isEqualTo(1);
+        verify(reconciliationTaskRepository).save(org.mockito.ArgumentMatchers.argThat(task ->
+                task.getType() == PaymentReconciliationTask.ReconciliationType.PG_TIMEOUT_PROCESSING_PAYMENT
+                        && task.getPaymentId().equals(300L)
+                        && task.getOrderId().equals(1L)
+                        && task.getUserId().equals(10L)
+                        && task.getIdempotencyKey().equals("pay-key-timeout")
+                        && task.getPaymentMethod() == Payment.PaymentMethod.CARD
+                        && task.getAmount().compareTo(BigDecimal.valueOf(12000)) == 0
+                        && task.getReason().contains("PROCESSING")
+                        && task.getPgOccurredAt() != null
+        ));
+        verify(outboxEventService).recordPaymentReconciliationRequired(any(PaymentReconciliationTask.class));
+    }
+
+    @Test
+    void registerStaleProcessingPaymentsForReconciliationSkipsAlreadyRegisteredPayment() {
+        LocalDateTime cutoff = LocalDateTime.of(2026, 10, 14, 10, 0);
+        Payment stalePayment = Payment.builder()
+                .paymentId(300L)
+                .orderId(1L)
+                .userId(10L)
+                .amount(BigDecimal.valueOf(12000))
+                .method(Payment.PaymentMethod.CARD)
+                .status(Payment.PaymentStatus.PROCESSING)
+                .idempotencyKey("pay-key-timeout")
+                .build();
+        PaymentReconciliationTask existingTask = PaymentReconciliationTask.builder()
+                .taskId(500L)
+                .type(PaymentReconciliationTask.ReconciliationType.PG_TIMEOUT_PROCESSING_PAYMENT)
+                .status(PaymentReconciliationTask.ReconciliationStatus.OPEN)
+                .orderId(1L)
+                .userId(10L)
+                .paymentId(300L)
+                .amount(BigDecimal.valueOf(12000))
+                .reason("already registered")
+                .build();
+
+        when(paymentRepository.findByStatusAndCreatedAtLessThanEqualOrderByCreatedAtAscPaymentIdAsc(
+                any(), any(), any()
+        )).thenReturn(List.of(stalePayment));
+        when(reconciliationTaskRepository.findByPaymentId(300L)).thenReturn(Optional.of(existingTask));
+
+        int registeredCount = paymentService.registerStaleProcessingPaymentsForReconciliation(cutoff, 100);
+
+        assertThat(registeredCount).isZero();
+        verify(reconciliationTaskRepository, never()).save(any());
+        verify(outboxEventService, never()).recordPaymentReconciliationRequired(any());
+    }
+
+    @Test
     void processPaymentWebhookEventConfirmsPendingOrderForApprovedEvent() {
         MockPgClient.PgEvent event = MockPgClient.PgEvent.approved(1L, "MOCK-TX-1", BigDecimal.valueOf(12000));
 

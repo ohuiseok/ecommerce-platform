@@ -82,6 +82,9 @@ public class PaymentResponse {
         private PaymentReconciliationTask.ReconciliationStatus status;
         private Long orderId;
         private Long userId;
+        private Long paymentId;
+        private String idempotencyKey;
+        private Payment.PaymentMethod paymentMethod;
         private String pgEventId;
         private String pgDeliveryId;
         private String pgTransactionId;
@@ -98,6 +101,9 @@ public class PaymentResponse {
                     .status(task.getStatus())
                     .orderId(task.getOrderId())
                     .userId(task.getUserId())
+                    .paymentId(task.getPaymentId())
+                    .idempotencyKey(task.getIdempotencyKey())
+                    .paymentMethod(task.getPaymentMethod())
                     .pgEventId(task.getPgEventId())
                     .pgDeliveryId(task.getPgDeliveryId())
                     .pgTransactionId(task.getPgTransactionId())

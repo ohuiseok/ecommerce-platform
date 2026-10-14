@@ -41,6 +41,12 @@ app:
       fixed-delay-ms: ${ORDER_PENDING_EXPIRATION_FIXED_DELAY_MS:60000}
       initial-delay-ms: ${ORDER_PENDING_EXPIRATION_INITIAL_DELAY_MS:60000}
       batch-size: ${ORDER_PENDING_EXPIRATION_BATCH_SIZE:100}
+  payment:
+    processing-reconciliation:
+      timeout-minutes: ${PAYMENT_PROCESSING_RECONCILIATION_TIMEOUT_MINUTES:10}
+      fixed-delay-ms: ${PAYMENT_PROCESSING_RECONCILIATION_FIXED_DELAY_MS:60000}
+      initial-delay-ms: ${PAYMENT_PROCESSING_RECONCILIATION_INITIAL_DELAY_MS:60000}
+      batch-size: ${PAYMENT_PROCESSING_RECONCILIATION_BATCH_SIZE:100}
 
 management:
   endpoints:

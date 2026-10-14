@@ -78,11 +78,13 @@ public class OutboxEventService {
                 task.getTaskId()
         );
         payload.put("orderId", task.getOrderId());
-        payload.put("paymentId", null);
+        payload.put("paymentId", task.getPaymentId());
         payload.put("userId", task.getUserId());
         payload.put("amount", task.getAmount());
         payload.put("status", task.getStatus());
         payload.put("reason", task.getReason());
+        payload.put("idempotencyKey", task.getIdempotencyKey());
+        payload.put("paymentMethod", task.getPaymentMethod());
         payload.put("pgEventId", task.getPgEventId());
         payload.put("pgTransactionId", task.getPgTransactionId());
 

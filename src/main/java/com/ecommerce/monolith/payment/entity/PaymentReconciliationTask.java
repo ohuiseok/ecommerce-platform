@@ -15,10 +15,16 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "payment_reconciliation_tasks",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_payment_reconciliation_tasks_pg_event_id",
-                columnNames = "pg_event_id"
-        )
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_payment_reconciliation_tasks_pg_event_id",
+                        columnNames = "pg_event_id"
+                ),
+                @UniqueConstraint(
+                        name = "uk_payment_reconciliation_tasks_payment_id",
+                        columnNames = "payment_id"
+                )
+        }
 )
 @Data
 @Builder
@@ -46,13 +52,23 @@ public class PaymentReconciliationTask {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "pg_event_id", nullable = false)
+    @Column(name = "payment_id")
+    private Long paymentId;
+
+    @Column(name = "idempotency_key", length = 100)
+    private String idempotencyKey;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method")
+    private Payment.PaymentMethod paymentMethod;
+
+    @Column(name = "pg_event_id")
     private String pgEventId;
 
-    @Column(name = "pg_delivery_id", nullable = false)
+    @Column(name = "pg_delivery_id")
     private String pgDeliveryId;
 
-    @Column(name = "pg_transaction_id", nullable = false)
+    @Column(name = "pg_transaction_id")
     private String pgTransactionId;
 
     @Column(nullable = false, precision = 10, scale = 2)
@@ -61,7 +77,7 @@ public class PaymentReconciliationTask {
     @Column(nullable = false)
     private String reason;
 
-    @Column(name = "pg_occurred_at", nullable = false)
+    @Column(name = "pg_occurred_at")
     private LocalDateTime pgOccurredAt;
 
     @CreatedDate
@@ -73,7 +89,8 @@ public class PaymentReconciliationTask {
     private LocalDateTime updatedAt;
 
     public enum ReconciliationType {
-        LATE_PAYMENT_APPROVED_AFTER_ORDER_CANCELLED
+        LATE_PAYMENT_APPROVED_AFTER_ORDER_CANCELLED,
+        PG_TIMEOUT_PROCESSING_PAYMENT
     }
 
     public enum ReconciliationStatus {
