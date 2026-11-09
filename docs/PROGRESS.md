@@ -173,6 +173,7 @@
 - 2026-10-14: Phase 5 - PG 타임아웃으로 오래 남은 `PROCESSING` 결제를 운영 보정 대상으로 등록하도록 구현했다.
 - 2026-10-14: Phase 5 - 동일 idempotency key 결제와 PG 타임아웃 재시도 통합 테스트를 추가했다.
 - 2026-11-08: Phase 5 - `OutboxPublisher` 포트와 전송 기술 독립적인 `OutboxMessage` 계약을 추가했다.
+- 2026-11-09: Phase 5 - local/test 프로필의 로그 기반 Outbox publisher와 메타데이터 출력·payload 비노출·프로필 등록 단위 테스트를 추가했다. `./gradlew test` 통과.
 
 ## 다음 작업
 
@@ -188,7 +189,6 @@
 
 ### Phase 5: 결제 트랜잭션과 Outbox 실행 경로
 
-- 로컬에서 사용할 수 있는 로그 기반 Outbox publisher와 단위 테스트를 추가한다.
 - Outbox 발행 스케줄러를 추가하고 성공·실패 상태를 반영한다.
 - 다중 인스턴스에서 Outbox 이벤트를 중복 선점하지 않도록 DB 락 전략을 구현한다.
 - Outbox 발행 재시도·dead-letter 전환·중복 선점 통합 테스트를 추가한다.
