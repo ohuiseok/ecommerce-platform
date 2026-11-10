@@ -41,6 +41,11 @@ app:
       fixed-delay-ms: ${ORDER_PENDING_EXPIRATION_FIXED_DELAY_MS:60000}
       initial-delay-ms: ${ORDER_PENDING_EXPIRATION_INITIAL_DELAY_MS:60000}
       batch-size: ${ORDER_PENDING_EXPIRATION_BATCH_SIZE:100}
+  outbox:
+    publishing:
+      fixed-delay-ms: ${OUTBOX_PUBLISHING_FIXED_DELAY_MS:60000}
+      initial-delay-ms: ${OUTBOX_PUBLISHING_INITIAL_DELAY_MS:60000}
+      batch-size: ${OUTBOX_PUBLISHING_BATCH_SIZE:100}
   payment:
     processing-reconciliation:
       timeout-minutes: ${PAYMENT_PROCESSING_RECONCILIATION_TIMEOUT_MINUTES:10}
