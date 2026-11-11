@@ -1,8 +1,6 @@
 package com.ecommerce.monolith.outbox.service;
 
 import com.ecommerce.monolith.outbox.entity.OutboxEvent;
-import com.ecommerce.monolith.outbox.port.OutboxMessage;
-import com.ecommerce.monolith.outbox.port.OutboxPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,61 +19,29 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class OutboxPublishingSchedulerTest {
     @Mock private OutboxEventService service;
-    @Mock private OutboxPublisher publisher;
+    @Mock private OutboxPublishingWorker worker;
     private OutboxPublishingScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        scheduler = new OutboxPublishingScheduler(service, publisher);
+        scheduler = new OutboxPublishingScheduler(service, worker);
         ReflectionTestUtils.setField(scheduler, "batchSize", 10);
     }
 
     @Test
-    void publishesMessageBeforeMarkingSuccess() {
-        OutboxEvent event = event(1L);
-        when(service.findPublishableEvents(10)).thenReturn(List.of(event));
-
-        scheduler.publishEvents();
-
-        var order = inOrder(publisher, service);
-        order.verify(publisher).publish(message(event));
-        order.verify(service).markPublished(1L);
-        verify(service, never()).markFailed(anyLong(), anyString());
-    }
-
-    @Test
-    void recordsFailureAndContinuesThenRetriesSameEventId() {
-        OutboxEvent first = event(1L);
-        OutboxEvent second = event(2L);
-        when(service.findPublishableEvents(10)).thenReturn(List.of(first, second), List.of(first));
-        doThrow(new IllegalStateException("private payload")).doNothing()
-                .when(publisher).publish(message(first));
-
-        scheduler.publishEvents();
-        scheduler.publishEvents();
-
-        verify(service).markFailed(1L, "IllegalStateException");
-        verify(service).markPublished(2L);
-        verify(service).markPublished(1L);
-        verify(publisher, times(2)).publish(message(first));
-    }
-
-    @Test
-    void successPersistenceFailureDoesNotCountAsPublishingFailureOrStopBatch() {
+    void workerFailureDoesNotStopBatch() {
         when(service.findPublishableEvents(10)).thenReturn(List.of(event(1L), event(2L)));
-        doThrow(new IllegalStateException()).when(service).markPublished(1L);
-
+        doThrow(new IllegalStateException()).when(worker).publishEvent(1L);
         scheduler.publishEvents();
-
-        verify(service, never()).markFailed(anyLong(), anyString());
-        verify(service).markPublished(2L);
+        verify(worker).publishEvent(1L);
+        verify(worker).publishEvent(2L);
     }
 
     @Test
     void emptyBatchDoesNotPublish() {
         when(service.findPublishableEvents(10)).thenReturn(List.of());
         scheduler.publishEvents();
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(worker);
     }
 
     @Test
@@ -83,7 +49,7 @@ class OutboxPublishingSchedulerTest {
         var runner = new ApplicationContextRunner()
                 .withUserConfiguration(OutboxPublishingScheduler.class)
                 .withBean(OutboxEventService.class, () -> service)
-                .withBean(OutboxPublisher.class, () -> publisher);
+                .withBean(OutboxPublishingWorker.class, () -> worker);
         for (String profile : new String[]{"local", "test"}) {
             runner.withPropertyValues("spring.profiles.active=" + profile)
                     .run(context -> assertThat(context).hasSingleBean(OutboxPublishingScheduler.class));
@@ -98,8 +64,4 @@ class OutboxPublishingSchedulerTest {
                 .aggregateType(OutboxEvent.AggregateType.ORDER).aggregateId(id).payload("{}").build();
     }
 
-    private OutboxMessage message(OutboxEvent event) {
-        return new OutboxMessage(event.getEventId(), event.getEventType(), event.getAggregateType(),
-                event.getAggregateId(), event.getPayload());
-    }
 }
