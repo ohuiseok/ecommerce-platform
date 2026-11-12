@@ -7,6 +7,9 @@ import com.ecommerce.monolith.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.mockito.ArgumentCaptor;
+import com.ecommerce.monolith.outbox.port.OutboxMessage;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -21,6 +24,7 @@ import static org.mockito.Mockito.*;
 class OutboxPublishingLockIntegrationTest extends AbstractIntegrationTest {
     @Autowired OutboxEventRepository repository;
     @Autowired OutboxPublishingWorker worker;
+    @Autowired JdbcTemplate jdbcTemplate;
     @MockBean OutboxPublisher publisher;
 
     @Test
@@ -74,4 +78,76 @@ class OutboxPublishingLockIntegrationTest extends AbstractIntegrationTest {
             repository.deleteById(event.getOutboxEventId());
         }
     }
+
+    @Test
+    void retryPublishesSameEventAndPersistsSuccess() {
+        var event = newPublishableEvent();
+        try {
+            doThrow(new IllegalStateException("temporary failure")).doNothing()
+                    .when(publisher).publish(any());
+            worker.publishEvent(event.getOutboxEventId());
+            var failed = repository.findById(event.getOutboxEventId()).orElseThrow();
+            assertThat(failed.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.FAILED);
+            assertThat(failed.getAvailableAt()).isAfter(LocalDateTime.now());
+            assertThat(failed.getPublishedAt()).isNull();
+
+            makeRetryDue(event);
+            worker.publishEvent(event.getOutboxEventId());
+            worker.publishEvent(event.getOutboxEventId());
+
+            var published = repository.findById(event.getOutboxEventId()).orElseThrow();
+            assertThat(published.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.PUBLISHED);
+            assertThat(published.getRetryCount()).isEqualTo(1);
+            assertThat(published.getPublishedAt()).isNotNull();
+            assertThat(published.getLastError()).isNull();
+            var messages = ArgumentCaptor.forClass(OutboxMessage.class);
+            verify(publisher, times(2)).publish(messages.capture());
+            assertThat(messages.getAllValues()).allSatisfy(message -> {
+                assertThat(message.eventId()).isEqualTo(event.getEventId());
+                assertThat(message.payload()).isEqualTo(event.getPayload());
+            });
+        } finally {
+            repository.deleteById(event.getOutboxEventId());
+        }
+    }
+
+    @Test
+    void fifthFailurePersistsDeadLetterAndPreventsFurtherPublishing() {
+        var event = newPublishableEvent();
+        try {
+            doThrow(new IllegalStateException("temporary failure")).when(publisher).publish(any());
+            for (int attempt = 1; attempt <= 5; attempt++) {
+                makeRetryDue(event);
+                worker.publishEvent(event.getOutboxEventId());
+                var failed = repository.findById(event.getOutboxEventId()).orElseThrow();
+                assertThat(failed.getRetryCount()).isEqualTo(attempt);
+                assertThat(failed.getStatus()).isEqualTo(attempt == 5
+                        ? OutboxEvent.OutboxStatus.DEAD_LETTER : OutboxEvent.OutboxStatus.FAILED);
+                assertThat(failed.getPublishedAt()).isNull();
+                assertThat(failed.getLastError()).isEqualTo("IllegalStateException");
+            }
+            makeRetryDue(event);
+            worker.publishEvent(event.getOutboxEventId());
+            verify(publisher, times(5)).publish(any());
+            var deadLetter = repository.findById(event.getOutboxEventId()).orElseThrow();
+            assertThat(deadLetter.getStatus()).isEqualTo(OutboxEvent.OutboxStatus.DEAD_LETTER);
+            assertThat(deadLetter.getRetryCount()).isEqualTo(5);
+        } finally {
+            repository.deleteById(event.getOutboxEventId());
+        }
+    }
+
+    private OutboxEvent newPublishableEvent() {
+        return repository.saveAndFlush(OutboxEvent.builder().eventId(UUID.randomUUID())
+                .eventType(OutboxEvent.EventType.ORDER_CREATED)
+                .aggregateType(OutboxEvent.AggregateType.ORDER).aggregateId(1L)
+                .payload("{}").availableAt(LocalDateTime.now().minusMinutes(1)).build());
+    }
+
+    private void makeRetryDue(OutboxEvent event) {
+        // 실제 대기 없이 재시도 시각만 앞당겨 워커의 DB 조회와 트랜잭션을 검증한다.
+        jdbcTemplate.update("UPDATE outbox_events SET available_at = ? WHERE outbox_event_id = ?",
+                LocalDateTime.now().minusMinutes(1), event.getOutboxEventId());
+    }
+
 }
