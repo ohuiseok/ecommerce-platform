@@ -129,6 +129,22 @@ Outbox 이벤트는 도메인 감사와 장애 복구 근거이므로 단기 TTL
 
 운영 DB 용량이 문제가 되면 `PUBLISHED` 상태 이벤트부터 월 단위로 아카이브한다. 아카이브 시에도 `event_id`, `event_type`, `aggregate_type`, `aggregate_id`, `status`, `retry_count`, 주요 시각, payload는 보존한다. `FAILED`와 `DEAD_LETTER` 이벤트는 운영자가 처리하거나 별도 보관 결정을 하기 전까지 운영 DB에 남긴다.
 
+### 아카이브 실행
+
+정리는 기본 비활성화한다. 운영 데이터 보관 기간을 검토한 뒤
+`app.outbox.archiving.enabled=true`와 `app.outbox.archiving.before-month=YYYY-MM`을 설정한다.
+기준 월은 보관할 첫 월이다. 그 월 1일 00:00보다 이전에 발행된 `PUBLISHED`만
+`outbox_event_archive`로 옮기며 미래 월은 거부한다. 보관 기간을 임의의 TTL로 정하지 않는다.
+아카이브 테이블은 모든 원본 컬럼을 보존하며 자동 삭제하지 않는다.
+
+스케줄러는 기본 1분 간격으로 최대 100건씩 처리한다.
+`app.outbox.archiving.batch-size`, `fixed-delay-ms`, `initial-delay-ms`로 조정한다.
+후자의 두 속성도 `app.outbox.archiving` 아래에 둔다.
+원본 삭제와 아카이브 저장은 하나의 SQL 및 트랜잭션으로 수행하고, 저장 실패 시 원본을 유지한다.
+동시 실행은 `FOR UPDATE SKIP LOCKED`로 분리한다.
+`PENDING`, `FAILED`, `DEAD_LETTER` 및 발행 시각이 없는 row는 정리하지 않는다.
+이 테이블은 같은 DB 안의 보존 영역이므로 외부 저장소 이관과 백업은 별도 운영 작업이다.
+
 ## 적용 범위
 
 - Phase 2 Day 11은 주문과 결제 저장 트랜잭션 안에서 outbox row를 함께 저장한다.
