@@ -185,6 +185,8 @@
 
 - 2026-11-14: Phase 6 - ADR-013에 최초 결제 금액 `totalAmount` 보존과 `refundedAmount` 누적 정책을 보완했다. 잔여 결제액·환불 가능액, 성공 반영 멱등성·동시성 및 결제 전 취소 기준을 명시했으며 `./gradlew test`를 통과했다(UP-TO-DATE).
 
+- 2026-11-17: Phase 6 - `orders.refunded_amount` 기본값·기존 row 백필·범위 CHECK 제약과 엔티티 필드, 잔여 결제액·결제 성공 여부에 따른 환불 가능액 계산 메서드를 구현했다. 지원되지 않는 AssertJ 검증 구문을 수정하고 금액 계산 단위 테스트·DB 제약 통합 테스트를 포함한 `./gradlew test`를 통과했다.
+
 ## 다음 작업
 
 아래 목록은 자동 작업 프롬프트에서 하나씩 선택해 처리하기 위한 실행 큐다. 한 번에 하나의 항목만 진행하고, 항목이 크면 가장 작은 검증 가능한 하위 단계 하나만 처리한다. 테스트가 통과해 커밋한 항목은 `완료`로 옮기고 이 목록에서 제거한다.
@@ -199,7 +201,6 @@
 
 ### Phase 6: 주문 라인 상태와 금액 스냅샷
 
-- `orders.refunded_amount`를 추가하고 잔여 결제액·환불 가능액 계산 메서드를 구현한다.
 - ADR-013의 `OrderItem` 상태와 상태 전이 검증을 구현하고 기존 row를 `ORDERED`로 백필한다.
 - `OrderItem`에 라인 원금, 배분 쿠폰 할인액, 실제 결제 금액 스냅샷 필드를 추가한다.
 - 주문 라인 원금 비율로 쿠폰 할인을 배분하는 순수 계산기를 구현한다.
@@ -296,4 +297,6 @@
 
 ## 실패·보류 기록
 
-- 아직 없음
+- 2026-11-15: Phase 6 첫 항목으로 `orders.refunded_amount` 기본값·백필·범위 CHECK 제약과 엔티티 필드, 잔여 결제액·결제 성공 여부에 따른 환불 가능액 계산 메서드 및 테스트를 추가했다. `./gradlew test` 결과 116개 중 1개 실패. `DatabaseCheckConstraintIntegrationTest.orderAmountsCannotBeNegative`에서 음수 `total_amount` 입력이 기존 `ck_orders_total_amount_non_negative` 대신 새 `ck_orders_refunded_amount_range` 제약에 먼저 걸려 제약 이름 검증이 실패했다. 완료 처리와 커밋·push는 보류했다.
+
+- 2026-11-16: Phase 6 첫 항목인 `orders.refunded_amount` 추가 작업을 이어서 진행했다. 음수 주문 총액이 기존 총액 CHECK와 새 환불액 범위 CHECK를 함께 위반하는 경우를 허용하도록 테스트의 제약 이름 검증을 수정했다. `./gradlew test`는 `compileTestJava`에서 실패했다. 현재 AssertJ 버전에 `hasMessageContainingAny(String, String)` 메서드가 없어 테스트 컴파일이 불가능했다. 완료 처리와 커밋·push는 보류했으며, 다음 시도에서 지원되는 assertion으로 변경해야 한다.

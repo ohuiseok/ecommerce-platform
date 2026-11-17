@@ -43,6 +43,11 @@ public class Order {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
+    /** PG 환불 성공으로 확정된 누적 금액. 최초 결제 금액은 변경하지 않는다. */
+    @Column(nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal refundedAmount = BigDecimal.ZERO;
+
     @Column(nullable = false, precision = 10, scale = 2)
     @Builder.Default
     private BigDecimal originalAmount = BigDecimal.ZERO;
@@ -125,6 +130,15 @@ public class Order {
             );
         }
         updateStatus(OrderStatus.CANCELLED);
+    }
+
+    public BigDecimal getRemainingPaymentAmount() {
+        return totalAmount.subtract(refundedAmount);
+    }
+
+    /** 결제 성공 여부는 결제 모듈에서 확인한다. 라인별 환불 자격은 별도 검증한다. */
+    public BigDecimal getRefundableAmount(boolean paymentCompleted) {
+        return paymentCompleted ? getRemainingPaymentAmount() : BigDecimal.ZERO;
     }
 
     public void calculateAmounts() {
