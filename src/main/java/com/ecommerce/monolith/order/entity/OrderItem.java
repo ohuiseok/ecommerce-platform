@@ -40,6 +40,16 @@ public class OrderItem {
     @Column(nullable = false)
     private Integer quantity;
 
+    // 할인 배분 및 주문 생성 연동 전의 기존 라인은 스냅샷이 없으므로 null을 유지한다.
+    @Column(precision = 19, scale = 2)
+    private BigDecimal lineGrossAmount;
+
+    @Column(precision = 19, scale = 2)
+    private BigDecimal lineCouponDiscountAmount;
+
+    @Column(precision = 19, scale = 2)
+    private BigDecimal linePaymentAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default
