@@ -79,7 +79,11 @@ class OrderServiceTest {
                 .stockQuantity(5)
                 .status(Product.ProductStatus.ACTIVE)
                 .build());
-        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.getOrderItems().get(0).setOrderItemId(1L);
+            return order;
+        });
 
         OrderResponse.OrderInfo result = orderService.createOrder(1L, request);
 

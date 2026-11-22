@@ -4,6 +4,10 @@ import com.ecommerce.monolith.support.AbstractIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import java.math.BigDecimal;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -36,6 +40,48 @@ class OrderCheckoutIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    void creationPersistsLineAmountSnapshots(boolean fromCart, boolean withCoupon) throws Exception {
+        String token = registerAndLogin("snapshots-" + fromCart + "-" + withCoupon + "@example.com");
+        String admin = login("admin@test.com", "admin1234");
+        Long first = createProduct(admin, "첫 상품", 10001, 5);
+        Long second = createProduct(admin, "둘째 상품", 10001, 5);
+        Long coupon = withCoupon ? issueCoupon(token,
+                createCoupon(admin, "SNAPSHOT-" + fromCart, 1, 1, 10)) : null;
+        String items = "[{\"productId\":" + first + ",\"quantity\":2},{\"productId\":" + second + ",\"quantity\":2}]";
+        if (fromCart) {
+            addToCart(token, first, 2);
+            addToCart(token, second, 2);
+        }
+        String response = mockMvc.perform(post(fromCart ? "/api/orders/checkout" : "/api/orders")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"orderItems": %s, "userCouponId": %s,
+                                 "shippingAddress": {"zipCode":"12345", "address":"Seoul",
+                                 "recipientName":"Buyer", "recipientPhone":"010-1234-5678"}}
+                                """.formatted(items, coupon)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long orderId = objectMapper.readTree(response).get("orderId").asLong();
+        var rows = jdbcTemplate.queryForList("""
+                SELECT line_gross_amount, line_coupon_discount_amount, line_payment_amount
+                FROM order_items WHERE order_id = ? ORDER BY order_item_id
+                """, orderId);
+        assertThat(rows).hasSize(2);
+        for (int i = 0; i < rows.size(); i++) {
+            var row = rows.get(i);
+            BigDecimal discount = withCoupon && i == 0 ? BigDecimal.ONE : BigDecimal.ZERO;
+            assertThat((BigDecimal) row.get("line_gross_amount")).isEqualByComparingTo("20002");
+            assertThat((BigDecimal) row.get("line_coupon_discount_amount")).isEqualByComparingTo(discount);
+            assertThat((BigDecimal) row.get("line_payment_amount"))
+                    .isEqualByComparingTo(new BigDecimal("20002").subtract(discount));
+        }
+    }
 
     @Test
     void checkoutFromCartThenPaySuccessfullyConfirmsOrder() throws Exception {

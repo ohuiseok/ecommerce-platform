@@ -7,6 +7,7 @@ import com.ecommerce.monolith.common.exception.BusinessException;
 import com.ecommerce.monolith.common.exception.ErrorCode;
 import com.ecommerce.monolith.order.dto.OrderRequest;
 import com.ecommerce.monolith.order.dto.OrderResponse;
+import com.ecommerce.monolith.order.domain.CouponDiscountAllocator;
 import com.ecommerce.monolith.order.entity.Order;
 import com.ecommerce.monolith.order.entity.OrderItem;
 import com.ecommerce.monolith.order.entity.ShippingAddress;
@@ -67,6 +68,7 @@ public class OrderService {
 
         // 5. 주문 저장
         Order savedOrder = orderRepository.save(order);
+        finalizeLineAmounts(savedOrder);
         markCouponUsedIfPresent(request.getUserCouponId(), savedOrder.getOrderId());
         outboxEventService.recordOrderCreated(savedOrder);
 
@@ -98,6 +100,7 @@ public class OrderService {
         applyCouponIfPresent(order, userId, request.getUserCouponId());
 
         Order savedOrder = orderRepository.save(order);
+        finalizeLineAmounts(savedOrder);
         markCouponUsedIfPresent(request.getUserCouponId(), savedOrder.getOrderId());
         cartService.clearCart(userId);
         outboxEventService.recordOrderCreated(savedOrder);
@@ -106,6 +109,21 @@ public class OrderService {
                 savedOrder.getOrderId(), savedOrder.getUserId(), savedOrder.getTotalAmount());
 
         return OrderResponse.OrderInfo.from(savedOrder);
+    }
+
+    private void finalizeLineAmounts(Order order) {
+        // IDENTITY로 발급된 라인 ID를 잔여 할인액 배분의 동률 기준으로 사용한다.
+        var items = order.getOrderItems();
+        var allocations = CouponDiscountAllocator.allocate(items.stream()
+                .map(item -> new CouponDiscountAllocator.Line(item.getOrderItemId(), item.getSubtotal()))
+                .toList(), order.getDiscountAmount());
+        for (int i = 0; i < items.size(); i++) {
+            var allocation = allocations.get(i);
+            var item = items.get(i);
+            item.setLineGrossAmount(allocation.grossAmount());
+            item.setLineCouponDiscountAmount(allocation.couponDiscountAmount());
+            item.setLinePaymentAmount(allocation.paymentAmount());
+        }
     }
 
     private void applyCouponIfPresent(Order order, Long userId, Long userCouponId) {
