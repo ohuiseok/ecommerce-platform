@@ -329,6 +329,11 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
         order.updateStatus(Order.OrderStatus.CONFIRMED);
+        for (OrderItem item : order.getOrderItems()) {
+            if (item.getStatus() != OrderItem.OrderItemStatus.CANCELLED) {
+                item.updateStatus(OrderItem.OrderItemStatus.CONFIRMED);
+            }
+        }
         saveStatusChange(order);
 
         log.info("event=order.confirmed orderId={} userId={}", orderId, order.getUserId());

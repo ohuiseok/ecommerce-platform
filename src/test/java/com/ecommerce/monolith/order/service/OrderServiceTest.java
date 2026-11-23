@@ -154,6 +154,42 @@ class OrderServiceTest {
     }
 
     @Test
+    void markOrderConfirmedConfirmsActiveLinesAndPreservesCancelledLines() {
+        Order order = orderWithStatus(Order.OrderStatus.PENDING);
+        OrderItem active = OrderItem.builder().build();
+        OrderItem cancelled = OrderItem.builder().status(OrderItem.OrderItemStatus.CANCELLED).build();
+        order.addOrderItem(active);
+        order.addOrderItem(cancelled);
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+
+        orderService.markOrderConfirmed(1L);
+
+        assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CONFIRMED);
+        assertThat(active.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CONFIRMED);
+        assertThat(cancelled.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED);
+        verify(orderRepository).saveAndFlush(order);
+
+        assertThatThrownBy(() -> orderService.markOrderConfirmed(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_ORDER_STATUS);
+        assertThat(active.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CONFIRMED);
+        assertThat(cancelled.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED);
+    }
+
+    @Test
+    void markOrderConfirmedConvertsConcurrentStatusConflict() {
+        Order order = orderWithStatus(Order.OrderStatus.PENDING);
+        order.addOrderItem(OrderItem.builder().build());
+        when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+        when(orderRepository.saveAndFlush(order))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Order.class, 1L));
+
+        assertThatThrownBy(() -> orderService.markOrderConfirmed(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.ORDER_STATE_CONFLICT);
+    }
+
+    @Test
     void markOrderConfirmedRejectsNonPendingOrder() {
         Order order = orderWithStatus(Order.OrderStatus.CANCELLED);
 

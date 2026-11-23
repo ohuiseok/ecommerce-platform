@@ -35,6 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentApprovalExpirationConcurrencyIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private OrderService orderService;
 
     @Autowired
@@ -134,12 +137,23 @@ class PaymentApprovalExpirationConcurrencyIntegrationTest extends AbstractIntegr
         assertThat(finalOrder.getStatus()).isIn(Order.OrderStatus.CONFIRMED, Order.OrderStatus.CANCELLED);
 
         if (finalOrder.getStatus() == Order.OrderStatus.CONFIRMED) {
+            assertThat(jdbcTemplate.queryForList(
+                    "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
+                    .containsExactly("CONFIRMED");
+            paymentService.requestPayment(paymentRequest(createdOrder.getOrderId()));
+            assertThat(paymentRepository.findAllByOrderId(createdOrder.getOrderId())).hasSize(1);
+            assertThat(jdbcTemplate.queryForList(
+                    "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
+                    .containsExactly("CONFIRMED");
             assertThat(payments).hasSize(1);
             assertThat(payments.get(0).getStatus()).isEqualTo(Payment.PaymentStatus.COMPLETED);
             assertThat(finalProduct.getStockQuantity()).isEqualTo(initialStock - orderQuantity);
             return;
         }
 
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
+                .containsExactly("ORDERED");
         assertThat(payments).isEmpty();
         assertThat(finalProduct.getStockQuantity()).isEqualTo(initialStock);
         assertThat(finalProduct.getStatus()).isEqualTo(Product.ProductStatus.ACTIVE);
