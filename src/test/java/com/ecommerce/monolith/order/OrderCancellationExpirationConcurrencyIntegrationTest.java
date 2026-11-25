@@ -16,7 +16,9 @@ import com.ecommerce.monolith.product.repository.ProductRepository;
 import com.ecommerce.monolith.support.AbstractIntegrationTest;
 import com.ecommerce.monolith.user.entity.User;
 import com.ecommerce.monolith.user.repository.UserRepository;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
@@ -52,12 +54,16 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
     @Autowired
     private UserRepository userRepository;
 
-    @Test
-    void userCancellationAndPendingExpirationRestoreResourcesOnlyOnce() throws InterruptedException {
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void concurrentCancellationsRestoreResourcesOnlyOnce(boolean raceWithExpiration) throws InterruptedException {
         int initialStock = 5;
         int orderQuantity = 2;
         User user = userRepository.save(User.builder()
-                .email("cancel-expire-buyer@example.com")
+                .email("cancel-expire-buyer-" + raceWithExpiration + "@example.com")
                 .password("encoded-password")
                 .name("Cancel Expire Buyer")
                 .phoneNumber("010-5555-6666")
@@ -69,7 +75,7 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
                 .status(Product.ProductStatus.ACTIVE)
                 .build());
         Coupon coupon = couponRepository.save(Coupon.builder()
-                .code("CANCEL_EXPIRE_ONCE")
+                .code("CANCEL_EXPIRE_ONCE_" + raceWithExpiration)
                 .name("취소 만료 경쟁 쿠폰")
                 .discountType(Coupon.DiscountType.FIXED_AMOUNT)
                 .discountValue(BigDecimal.valueOf(1000))
@@ -122,9 +128,15 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
             readyLatch.countDown();
             await(startLatch);
             try {
-                expirationAttempts.addAndGet(orderService.expirePendingOrders(LocalDateTime.now().plusMinutes(1), 10));
+                if (raceWithExpiration) {
+                    expirationAttempts.addAndGet(orderService.expirePendingOrders(LocalDateTime.now().plusMinutes(1), 10));
+                } else {
+                    orderService.cancelOrder(createdOrder.getOrderId());
+                    cancellationAttempts.incrementAndGet();
+                }
             } catch (BusinessException e) {
-                if (e.getErrorCode() == ErrorCode.ORDER_STATE_CONFLICT) {
+                if (e.getErrorCode() == ErrorCode.ORDER_STATE_CONFLICT
+                        || e.getErrorCode() == ErrorCode.ORDER_CANCELLATION_NOT_ALLOWED) {
                     stateConflicts.incrementAndGet();
                     return;
                 }
@@ -148,6 +160,11 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
         assertThat(unexpectedFailure.get()).isNull();
         assertThat(cancellationAttempts.get() + expirationAttempts.get() + stateConflicts.get()).isGreaterThanOrEqualTo(1);
         assertThat(finalOrder.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
+        if (!raceWithExpiration || cancellationAttempts.get() > 0) {
+            assertThat(jdbcTemplate.queryForList(
+                    "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
+                    .isNotEmpty().containsOnly("CANCELLED");
+        }
         assertThat(finalProduct.getStockQuantity()).isEqualTo(initialStock);
         assertThat(finalProduct.getStatus()).isEqualTo(Product.ProductStatus.ACTIVE);
         assertThat(finalUserCoupon.getStatus()).isEqualTo(UserCoupon.CouponStatus.ISSUED);

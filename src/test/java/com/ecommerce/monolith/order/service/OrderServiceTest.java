@@ -141,6 +141,31 @@ class OrderServiceTest {
     }
 
     @Test
+    void cancelOrderCancelsLinesAndRejectsRepeatedRequest() {
+        for (Order.OrderStatus status : List.of(Order.OrderStatus.PENDING, Order.OrderStatus.CONFIRMED)) {
+            Order order = orderWithStatus(status);
+            OrderItem active = OrderItem.builder().productId(10L).quantity(1)
+                    .status(status == Order.OrderStatus.PENDING
+                            ? OrderItem.OrderItemStatus.ORDERED : OrderItem.OrderItemStatus.CONFIRMED).build();
+            order.addOrderItem(active);
+            OrderItem cancelled = OrderItem.builder().productId(11L).quantity(1)
+                    .status(OrderItem.OrderItemStatus.CANCELLED).build();
+            order.addOrderItem(cancelled);
+            when(orderRepository.findById(1L)).thenReturn(Optional.of(order));
+
+            orderService.cancelOrder(1L);
+
+            assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
+            assertThat(active.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED);
+            assertThat(cancelled.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED);
+            assertThatThrownBy(() -> orderService.cancelOrder(1L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting("errorCode").isEqualTo(ErrorCode.ORDER_CANCELLATION_NOT_ALLOWED);
+        }
+        verify(productService, org.mockito.Mockito.times(2)).updateStock(eq(10L), any());
+    }
+
+    @Test
     void cancelOrderRejectsUserCancellationAfterProcessingStarted() {
         Order order = orderWithStatus(Order.OrderStatus.PROCESSING);
 

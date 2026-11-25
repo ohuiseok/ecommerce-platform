@@ -228,6 +228,11 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
         order.cancelByUser();
+        for (OrderItem item : order.getOrderItems()) {
+            if (item.getStatus() != OrderItem.OrderItemStatus.CANCELLED) {
+                item.updateStatus(OrderItem.OrderItemStatus.CANCELLED);
+            }
+        }
         saveStatusChange(order);
 
         restoreOrderResources(order);
