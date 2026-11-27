@@ -58,12 +58,12 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
     private JdbcTemplate jdbcTemplate;
 
     @ParameterizedTest
-    @ValueSource(booleans = {true, false})
-    void concurrentCancellationsRestoreResourcesOnlyOnce(boolean raceWithExpiration) throws InterruptedException {
+    @ValueSource(strings = {"expiration", "user", "paymentFailure"})
+    void concurrentCancellationsRestoreResourcesOnlyOnce(String competingAction) throws InterruptedException {
         int initialStock = 5;
         int orderQuantity = 2;
         User user = userRepository.save(User.builder()
-                .email("cancel-expire-buyer-" + raceWithExpiration + "@example.com")
+                .email("cancel-expire-buyer-" + competingAction + "@example.com")
                 .password("encoded-password")
                 .name("Cancel Expire Buyer")
                 .phoneNumber("010-5555-6666")
@@ -75,7 +75,7 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
                 .status(Product.ProductStatus.ACTIVE)
                 .build());
         Coupon coupon = couponRepository.save(Coupon.builder()
-                .code("CANCEL_EXPIRE_ONCE_" + raceWithExpiration)
+                .code("CANCEL_EXPIRE_ONCE_" + competingAction)
                 .name("취소 만료 경쟁 쿠폰")
                 .discountType(Coupon.DiscountType.FIXED_AMOUNT)
                 .discountValue(BigDecimal.valueOf(1000))
@@ -128,8 +128,11 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
             readyLatch.countDown();
             await(startLatch);
             try {
-                if (raceWithExpiration) {
+                if (competingAction.equals("expiration")) {
                     expirationAttempts.addAndGet(orderService.expirePendingOrders(LocalDateTime.now().plusMinutes(1), 10));
+                } else if (competingAction.equals("paymentFailure")) {
+                    orderService.cancelPendingOrderAfterPaymentFailure(createdOrder.getOrderId());
+                    cancellationAttempts.incrementAndGet();
                 } else {
                     orderService.cancelOrder(createdOrder.getOrderId());
                     cancellationAttempts.incrementAndGet();
@@ -160,11 +163,9 @@ class OrderCancellationExpirationConcurrencyIntegrationTest extends AbstractInte
         assertThat(unexpectedFailure.get()).isNull();
         assertThat(cancellationAttempts.get() + expirationAttempts.get() + stateConflicts.get()).isGreaterThanOrEqualTo(1);
         assertThat(finalOrder.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
-        if (!raceWithExpiration || cancellationAttempts.get() > 0) {
-            assertThat(jdbcTemplate.queryForList(
-                    "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
-                    .isNotEmpty().containsOnly("CANCELLED");
-        }
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
+                .isNotEmpty().containsOnly("CANCELLED");
         assertThat(finalProduct.getStockQuantity()).isEqualTo(initialStock);
         assertThat(finalProduct.getStatus()).isEqualTo(Product.ProductStatus.ACTIVE);
         assertThat(finalUserCoupon.getStatus()).isEqualTo(UserCoupon.CouponStatus.ISSUED);

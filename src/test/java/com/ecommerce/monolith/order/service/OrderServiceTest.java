@@ -244,8 +244,11 @@ class OrderServiceTest {
         orderService.cancelPendingOrderAfterPaymentFailure(1L);
 
         assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
+        assertThat(order.getOrderItems()).allSatisfy(item ->
+                assertThat(item.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED));
         verify(productService).updateStock(eq(10L), stockUpdate(ProductRequest.Operation.INCREASE, 2));
         verify(couponService).restoreCoupon(20L);
+        orderService.cancelPendingOrderAfterPaymentFailure(1L);
         verify(outboxEventService).recordOrderCancelled(order, "PAYMENT_FAILED");
     }
 
@@ -293,8 +296,11 @@ class OrderServiceTest {
 
         assertThat(expiredCount).isEqualTo(1);
         assertThat(order.getStatus()).isEqualTo(Order.OrderStatus.CANCELLED);
+        assertThat(order.getOrderItems()).allSatisfy(item ->
+                assertThat(item.getStatus()).isEqualTo(OrderItem.OrderItemStatus.CANCELLED));
         verify(productService).updateStock(eq(10L), stockUpdate(ProductRequest.Operation.INCREASE, 2));
         verify(couponService).restoreCoupon(20L);
+        assertThat(orderService.expirePendingOrders(cutoff, 100)).isZero();
         verify(outboxEventService).recordOrderCancelled(order, "PENDING_EXPIRED");
     }
 

@@ -153,7 +153,7 @@ class PaymentApprovalExpirationConcurrencyIntegrationTest extends AbstractIntegr
 
         assertThat(jdbcTemplate.queryForList(
                 "SELECT status FROM order_items WHERE order_id = ?", String.class, createdOrder.getOrderId()))
-                .containsExactly("ORDERED");
+                .containsExactly("CANCELLED");
         assertThat(payments).isEmpty();
         assertThat(finalProduct.getStockQuantity()).isEqualTo(initialStock);
         assertThat(finalProduct.getStatus()).isEqualTo(Product.ProductStatus.ACTIVE);

@@ -228,11 +228,7 @@ public class OrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
 
         order.cancelByUser();
-        for (OrderItem item : order.getOrderItems()) {
-            if (item.getStatus() != OrderItem.OrderItemStatus.CANCELLED) {
-                item.updateStatus(OrderItem.OrderItemStatus.CANCELLED);
-            }
-        }
+        cancelOrderItems(order);
         saveStatusChange(order);
 
         restoreOrderResources(order);
@@ -258,6 +254,7 @@ public class OrderService {
         }
 
         order.updateStatus(Order.OrderStatus.CANCELLED);
+        cancelOrderItems(order);
         saveStatusChange(order);
         restoreOrderResources(order);
         outboxEventService.recordOrderCancelled(order, "PAYMENT_FAILED");
@@ -304,12 +301,21 @@ public class OrderService {
         }
 
         order.updateStatus(Order.OrderStatus.CANCELLED);
+        cancelOrderItems(order);
         saveStatusChange(order);
         restoreOrderResources(order);
         outboxEventService.recordOrderCancelled(order, "PENDING_EXPIRED");
 
         log.info("event=order.expired orderId={} userId={}", order.getOrderId(), order.getUserId());
         return true;
+    }
+
+    private void cancelOrderItems(Order order) {
+        for (OrderItem item : order.getOrderItems()) {
+            if (item.getStatus() != OrderItem.OrderItemStatus.CANCELLED) {
+                item.updateStatus(OrderItem.OrderItemStatus.CANCELLED);
+            }
+        }
     }
 
     private void restoreOrderResources(Order order) {
