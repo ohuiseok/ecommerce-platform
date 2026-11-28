@@ -248,6 +248,10 @@ curl http://localhost:8080/api/orders/1 \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
+주문 응답의 `orderItems`에는 `status`(라인 상태), `lineGrossAmount`(라인 원금),
+`lineCouponDiscountAmount`(배분 쿠폰 할인액), `linePaymentAmount`(실제 결제 금액 스냅샷)가 포함됩니다.
+스냅샷 도입 전 생성된 라인의 세 금액은 `null`이며, 기존 `price`, `quantity`, `subtotal`도 유지됩니다.
+
 사용자별 주문 목록:
 
 ```bash

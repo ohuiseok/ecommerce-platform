@@ -56,6 +56,10 @@ public class OrderResponse {
         private BigDecimal price;
         private Integer quantity;
         private BigDecimal subtotal;
+        private OrderItem.OrderItemStatus status;
+        private BigDecimal lineGrossAmount;
+        private BigDecimal lineCouponDiscountAmount;
+        private BigDecimal linePaymentAmount;
 
         public static OrderItemInfo from(OrderItem orderItem) {
             return OrderItemInfo.builder()
@@ -65,6 +69,10 @@ public class OrderResponse {
                     .price(orderItem.getPrice())
                     .quantity(orderItem.getQuantity())
                     .subtotal(orderItem.getSubtotal())
+                    .status(orderItem.getStatus())
+                    .lineGrossAmount(orderItem.getLineGrossAmount())
+                    .lineCouponDiscountAmount(orderItem.getLineCouponDiscountAmount())
+                    .linePaymentAmount(orderItem.getLinePaymentAmount())
                     .build();
         }
     }
